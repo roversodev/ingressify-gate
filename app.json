@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "ingressify-app-leitor",
-    "slug": "ingressify-app-leitor",
+    "name": "ingressify-gate",
+    "slug": "ingressify-gate",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -16,7 +16,11 @@
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "permissions": [
+        "android.permission.CAMERA"
+      ],
+      "package": "br.com.ingressifygate"
     },
     "web": {
       "bundler": "metro",
@@ -33,10 +37,20 @@
           "resizeMode": "contain",
           "backgroundColor": "#ffffff"
         }
-      ]
+      ],
+      "expo-secure-store",
+      "expo-web-browser",
+      "expo-barcode-scanner"
     ],
     "experiments": {
       "typedRoutes": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "0cf2df22-a288-4dc7-96d7-be3178bc27b7"
+      }
+    },
+    "owner": "vitorroverso"
   }
 }

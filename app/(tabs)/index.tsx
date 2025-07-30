@@ -1,75 +1,339 @@
+import { api } from '@/api';
+import { useAuth, useUser } from '@clerk/clerk-expo';
+import { useQuery } from 'convex/react';
+import { type GenericId as Id } from "convex/values";
 import { Image } from 'expo-image';
-import { Platform, StyleSheet } from 'react-native';
+import { useRouter } from 'expo-router';
+import React from 'react';
+import {
+  ActivityIndicator,
+  FlatList,
+  RefreshControl,
+  SafeAreaView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 
-import { HelloWave } from '@/components/HelloWave';
-import ParallaxScrollView from '@/components/ParallaxScrollView';
-import { ThemedText } from '@/components/ThemedText';
-import { ThemedView } from '@/components/ThemedView';
+interface Event {
+  _id: string;
+  name: string;
+  date: string;
+  location: string;
+  totalTickets: number;
+  validatedTickets: number;
+  revenue: number;
+  imageUrl?: string;
+}
 
-export default function HomeScreen() {
+// Componente para renderizar um único evento
+function EventItem({ event, onPress }: { event: any, onPress: () => void }) {
+  // Buscar a URL da imagem usando o hook useQuery para cada item
+  const imageUrl = useQuery(
+    api.storage.getUrl, 
+    event.imageStorageId ? { storageId: event.imageStorageId } : "skip"
+  );
+  
+  // Buscar a disponibilidade do evento para obter a contagem de validações
+  const availability = useQuery(
+    api.events.getEventAvailability,
+    { eventId: event._id as Id<"events"> }
+  );
+  
+  // Usar availability.validatedTickets se disponível, caso contrário usar event.validatedTickets
+  const validatedTickets = availability ? availability.validatedTickets : event.validatedTickets;
+  const totalTickets = availability ? availability.purchasedTickets : event.totalTickets;
+  
+  const progressPercentage = totalTickets > 0 
+    ? (validatedTickets / totalTickets) * 100 
+    : 0;
+
   return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
-      headerImage={
+    <TouchableOpacity 
+      style={styles.eventCard}
+      onPress={onPress}
+    >
+      {imageUrl && (
         <Image
-          source={require('@/assets/images/partial-react-logo.png')}
-          style={styles.reactLogo}
+          source={{ uri: imageUrl }}
+          style={styles.eventImage}
+          contentFit="cover"
         />
-      }>
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText type="title">Welcome!</ThemedText>
-        <HelloWave />
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 1: Try it</ThemedText>
-        <ThemedText>
-          Edit <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> to see changes.
-          Press{' '}
-          <ThemedText type="defaultSemiBold">
-            {Platform.select({
-              ios: 'cmd + d',
-              android: 'cmd + m',
-              web: 'F12',
-            })}
-          </ThemedText>{' '}
-          to open developer tools.
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 2: Explore</ThemedText>
-        <ThemedText>
-          {`Tap the Explore tab to learn more about what's included in this starter app.`}
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 3: Get a fresh start</ThemedText>
-        <ThemedText>
-          {`When you're ready, run `}
-          <ThemedText type="defaultSemiBold">npm run reset-project</ThemedText> to get a fresh{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> directory. This will move the current{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> to{' '}
-          <ThemedText type="defaultSemiBold">app-example</ThemedText>.
-        </ThemedText>
-      </ThemedView>
-    </ParallaxScrollView>
+      )}
+      <View style={styles.eventHeader}>
+        <Text style={styles.eventName}>{event.name}</Text>
+        <Text style={styles.eventDate}>
+          {new Date(event.date).toLocaleDateString('pt-BR')}
+        </Text>
+      </View>
+      
+      <Text style={styles.eventLocation}>{event.location}</Text>
+      
+      <View style={styles.statsContainer}>
+        <View style={styles.statItem}>
+          <Text style={styles.statNumber}>{validatedTickets}</Text>
+          <Text style={styles.statLabel}>Validados</Text>
+        </View>
+        <View style={styles.statItem}>
+          <Text style={styles.statNumber}>{totalTickets}</Text>
+          <Text style={styles.statLabel}>Vendidos</Text>
+        </View>
+      </View>
+      
+      <View style={styles.progressContainer}>
+        <View style={styles.progressBar}>
+          <View 
+            style={[styles.progressFill, { width: `${progressPercentage}%` }]} 
+          />
+        </View>
+        <Text style={styles.progressText}>{progressPercentage.toFixed(1)}%</Text>
+      </View>
+    </TouchableOpacity>
+
+  );
+}
+
+export default function EventsScreen() {
+  const { isLoaded } = useAuth();
+  const { user } = useUser();
+  const router = useRouter();
+  const [refreshing, setRefreshing] = React.useState(false);
+
+  // Buscar eventos que o usuário criou
+  const sellerEvents = useQuery(
+    api.events.getSellerEvents,
+    user?.id ? { userId: user.id } : "skip"
+  );
+  
+  // Buscar eventos que o usuário pode validar
+  const validatorEvents = useQuery(
+    api.validators.getEventsUserCanValidate,
+    user?.id ? { userId: user.id } : "skip"
+  );
+  
+  const onRefresh = React.useCallback(() => {
+    setRefreshing(true);
+    setTimeout(() => setRefreshing(false), 1000);
+  }, []);
+
+  // Combinar os eventos do vendedor e os eventos que o usuário pode validar
+  const formattedEvents = React.useMemo(() => {
+    const allEvents: any[] = [];
+    
+    // Adicionar eventos do vendedor
+    if (sellerEvents) {
+      const formatted = sellerEvents.map((event: { _id: any; name: any; eventStartDate: any; _creationTime: any; location: any; totalTickets: any; metrics: { validatedTickets: any; revenue: any; }; imageStorageId: any; }) => ({
+        _id: event._id,
+        name: event.name,
+        date: event.eventStartDate || event._creationTime,
+        location: event.location,
+        totalTickets: event.totalTickets,
+        validatedTickets: event.metrics?.validatedTickets || 0,
+        revenue: event.metrics?.revenue || 0,
+        imageStorageId: event.imageStorageId,
+        isOwner: true
+      }));
+      allEvents.push(...formatted);
+    }
+    
+    // Adicionar eventos que o usuário pode validar
+    if (validatorEvents) {
+      const formatted = validatorEvents.map((event: { _id: any; name: any; eventStartDate: any; _creationTime: any; location: any; totalTickets: any; metrics: { validatedTickets: any; revenue: any; }; imageStorageId: any; }) => ({
+        _id: event._id,
+        name: event.name,
+        date: event.eventStartDate || event._creationTime,
+        location: event.location,
+        totalTickets: event.totalTickets,
+        validatedTickets: event.metrics?.validatedTickets || 0,
+        revenue: event.metrics?.revenue || 0,
+        imageStorageId: event.imageStorageId,
+        isOwner: false
+      }));
+      
+      // Filtrar eventos duplicados (que o usuário é dono e validador)
+      const uniqueEvents = formatted.filter((validatorEvent: { _id: any; }) => 
+        !allEvents.some(sellerEvent => sellerEvent._id === validatorEvent._id)
+      );
+      
+      allEvents.push(...uniqueEvents);
+    }
+    
+    return allEvents;
+  }, [sellerEvents, validatorEvents]);
+
+  if (sellerEvents === undefined && validatorEvents === undefined) {
+    return (
+      <SafeAreaView style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#E65CFF" />
+        <Text style={styles.loadingText}>Carregando eventos...</Text>
+      </SafeAreaView>
+    );
+  }
+
+  if ((!sellerEvents || sellerEvents.length === 0) && (!validatorEvents || validatorEvents.length === 0)) {
+    return (
+      <SafeAreaView style={styles.emptyContainer}>
+        <Text style={styles.emptyTitle}>Nenhum evento encontrado</Text>
+        <Text style={styles.emptySubtitle}>Você não tem eventos próprios ou eventos para validar</Text>
+      </SafeAreaView>
+    );
+  }
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <View style={styles.header}>
+        <Text style={styles.title}>Eventos</Text>
+      </View>
+      
+      <FlatList
+        data={formattedEvents}
+        renderItem={({ item }) => (
+          <EventItem 
+            event={item} 
+            onPress={() => router.push(`/scanner/${item._id}`)}
+          />
+        )}
+        keyExtractor={(item) => item._id}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+        }
+        contentContainerStyle={styles.listContainer}
+        showsVerticalScrollIndicator={false}
+      />
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  titleContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
+  container: {
+    flex: 1,
+    backgroundColor: '#232323', // bg-body
   },
-  stepContainer: {
-    gap: 8,
+  header: {
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 10,
+    backgroundColor: '#232323', // bg-body
+  },
+  title: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+  },
+  listContainer: {
+    padding: 16,
+  },
+  eventCard: {
+    backgroundColor: '#181818', // bg-card
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  eventImage: {
+    width: '100%',
+    height: 150,
+    borderRadius: 8,
+    marginBottom: 12,
+  },
+  eventHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
     marginBottom: 8,
   },
-  reactLogo: {
-    height: 178,
-    width: 290,
-    bottom: 0,
-    left: 0,
-    position: 'absolute',
+  eventName: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#FFFFFF',
+    flex: 1,
+    marginRight: 8,
+  },
+  eventDate: {
+    fontSize: 14,
+    color: '#A3A3A3', // text-secondary
+  },
+  eventLocation: {
+    fontSize: 14,
+    color: '#A3A3A3', // text-secondary
+    marginBottom: 16,
+  },
+  statsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    marginBottom: 16,
+  },
+  statItem: {
+    alignItems: 'center',
+  },
+  statNumber: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#E65CFF', // text-destaque
+  },
+  statLabel: {
+    fontSize: 12,
+    color: '#A3A3A3', // text-secondary
+    marginTop: 4,
+  },
+  progressContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  progressBar: {
+    flex: 1,
+    height: 8,
+    backgroundColor: '#333333', // bg-progress-bg
+    borderRadius: 4,
+    marginRight: 8,
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: '100%',
+    backgroundColor: '#E65CFF', // bg-destaque
+    borderRadius: 4,
+  },
+  progressText: {
+    fontSize: 12,
+    color: '#A3A3A3', // text-secondary
+    width: 40,
+    textAlign: 'right',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#232323', // bg-body
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 16,
+    color: '#FFFFFF',
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#232323', // bg-body
+    padding: 20,
+  },
+  emptyTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+    marginBottom: 8,
+  },
+  emptySubtitle: {
+    fontSize: 16,
+    color: '#A3A3A3', // text-secondary
+    textAlign: 'center',
   },
 });

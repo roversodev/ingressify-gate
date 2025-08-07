@@ -13,12 +13,20 @@ export type PublicApiType = {
         applicableTicketTypes?: Array<Id<"ticketTypes">>;
         code: string;
         createdBy: string;
-        discountType: "percentage" | "fixed";
+        discountType: "percentage" | "fixed" | "custom";
         discountValue: number;
         eventId: Id<"events">;
         maxUses?: number;
         minPurchaseAmount?: number;
         name: string;
+        promotionRules?: {
+          discountPercentage?: number;
+          discountedItems?: number;
+          minQuantity?: number;
+          sameTicketType?: boolean;
+          targetQuantity?: number;
+        };
+        promotionType?: "standard" | "buyXgetY" | "minQuantity" | "bundle";
         validFrom: number;
         validUntil: number;
       },
@@ -31,7 +39,10 @@ export type PublicApiType = {
         code: string;
         eventId: Id<"events">;
         purchaseAmount: number;
-        ticketTypeIds: Array<Id<"ticketTypes">>;
+        ticketSelections: Array<{
+          quantity: number;
+          ticketTypeId: Id<"ticketTypes">;
+        }>;
       },
       any
     >;
@@ -45,6 +56,36 @@ export type PublicApiType = {
       "query",
       "public",
       { eventId: Id<"events"> },
+      any
+    >;
+    updateCoupon: FunctionReference<
+      "mutation",
+      "public",
+      {
+        applicableTicketTypes?: Array<Id<"ticketTypes">>;
+        couponId: Id<"coupons">;
+        discountType?: "percentage" | "fixed" | "custom";
+        discountValue?: number;
+        isActive?: boolean;
+        maxUses?: number;
+        minPurchaseAmount?: number;
+        name?: string;
+        promotionRules?: {
+          discountPercentage?: number;
+          discountedItems?: number;
+          minQuantity?: number;
+          sameTicketType?: boolean;
+          targetQuantity?: number;
+        };
+        promotionType?: "standard" | "buyXgetY" | "minQuantity" | "bundle";
+        validUntil?: number;
+      },
+      any
+    >;
+    deleteCoupon: FunctionReference<
+      "mutation",
+      "public",
+      { couponId: Id<"coupons"> },
       any
     >;
   };
@@ -618,6 +659,7 @@ export type PublicApiType = {
       {
         description?: string;
         eventId: Id<"events">;
+        isActive?: boolean;
         isCourtesy?: boolean;
         name: string;
         price: number;
@@ -637,6 +679,7 @@ export type PublicApiType = {
       "public",
       {
         description?: string;
+        isActive?: boolean;
         isCourtesy?: boolean;
         name: string;
         price: number;
@@ -933,6 +976,13 @@ export type PublicApiType = {
       },
       any
     >;
+    validateCpf: FunctionReference<"query", "public", { cpf: string }, any>;
+    checkCpfExists: FunctionReference<
+      "query",
+      "public",
+      { cpf: string; userId?: string },
+      any
+    >;
   };
   validators: {
     inviteValidator: FunctionReference<
@@ -969,6 +1019,254 @@ export type PublicApiType = {
       "query",
       "public",
       { userId: string },
+      any
+    >;
+  };
+  admin: {
+    checkAdminStatus: FunctionReference<
+      "query",
+      "public",
+      { userId: string },
+      any
+    >;
+    createFirstSuperAdmin: FunctionReference<
+      "mutation",
+      "public",
+      { email: string; userId: string },
+      any
+    >;
+    addAdmin: FunctionReference<
+      "mutation",
+      "public",
+      {
+        currentUserId: string;
+        email: string;
+        newAdminUserId: string;
+        permissions: Array<string>;
+        role: "admin" | "support" | "finance";
+      },
+      any
+    >;
+    removeAdmin: FunctionReference<
+      "mutation",
+      "public",
+      { adminUserId: string; currentUserId: string },
+      any
+    >;
+    updateAdminPermissions: FunctionReference<
+      "mutation",
+      "public",
+      {
+        adminUserId: string;
+        currentUserId: string;
+        permissions: Array<string>;
+        role: "admin" | "support" | "finance";
+      },
+      any
+    >;
+    listAllAdmins: FunctionReference<
+      "query",
+      "public",
+      { currentUserId: string },
+      any
+    >;
+    getPlatformStats: FunctionReference<
+      "query",
+      "public",
+      { userId: string },
+      any
+    >;
+    listAllUsers: FunctionReference<
+      "query",
+      "public",
+      { limit?: number; searchTerm?: string; skip?: number; userId: string },
+      any
+    >;
+    listAllEvents: FunctionReference<
+      "query",
+      "public",
+      { limit?: number; searchTerm?: string; skip?: number; userId: string },
+      any
+    >;
+    getEventDetails: FunctionReference<
+      "query",
+      "public",
+      { eventId: Id<"events">; userId: string },
+      any
+    >;
+    logAdminActivity: FunctionReference<
+      "mutation",
+      "public",
+      {
+        action: string;
+        adminId: string;
+        details?: any;
+        ipAddress?: string;
+        targetId?: string;
+        targetType: string;
+      },
+      any
+    >;
+    getAdminActivityLogs: FunctionReference<
+      "query",
+      "public",
+      {
+        filterAction?: string;
+        filterAdmin?: string;
+        limit?: number;
+        skip?: number;
+        userId: string;
+      },
+      any
+    >;
+    getSalesOverTime: FunctionReference<
+      "query",
+      "public",
+      { period?: string; userId: string },
+      any
+    >;
+  };
+  customers: {
+    create: FunctionReference<
+      "mutation",
+      "public",
+      { customerId: string; email: string; userId: string },
+      any
+    >;
+    getByUserId: FunctionReference<"query", "public", { userId: string }, any>;
+  };
+  eventLists: {
+    getEventLists: FunctionReference<
+      "query",
+      "public",
+      { eventId: Id<"events"> },
+      any
+    >;
+    getEventListByPublicUrl: FunctionReference<
+      "query",
+      "public",
+      { publicUrl: string },
+      any
+    >;
+    getUserSubscription: FunctionReference<
+      "query",
+      "public",
+      { listId: Id<"eventLists">; userId: string },
+      any
+    >;
+    createEventList: FunctionReference<
+      "mutation",
+      "public",
+      {
+        description?: string;
+        eventId: Id<"events">;
+        isActive: boolean;
+        listType: string;
+        maxSubscriptions?: number;
+        name: string;
+        publicUrl: string;
+        userId: string;
+        validationUrl?: string;
+      },
+      any
+    >;
+    updateEventList: FunctionReference<
+      "mutation",
+      "public",
+      {
+        description?: string;
+        isActive: boolean;
+        listId: Id<"eventLists">;
+        listType: string;
+        maxSubscriptions?: number;
+        name: string;
+        publicUrl: string;
+        validationUrl?: string;
+      },
+      any
+    >;
+    generateValidationUrl: FunctionReference<
+      "mutation",
+      "public",
+      Record<string, never>,
+      any
+    >;
+    addPersonToList: FunctionReference<
+      "mutation",
+      "public",
+      {
+        adminId: string;
+        listId: Id<"eventLists">;
+        personEmail?: string;
+        personName: string;
+        personPhone?: string;
+      },
+      any
+    >;
+    inviteValidator: FunctionReference<
+      "mutation",
+      "public",
+      { inviterId: string; listId: Id<"eventLists">; validatorEmail: string },
+      any
+    >;
+    checkInParticipant: FunctionReference<
+      "mutation",
+      "public",
+      { listId: Id<"eventLists">; participantId: string; validatorId: string },
+      any
+    >;
+    getEventListByValidationUrl: FunctionReference<
+      "query",
+      "public",
+      { validationUrl: string },
+      any
+    >;
+    checkValidatorPermission: FunctionReference<
+      "query",
+      "public",
+      { userId: string; validationUrl: string },
+      any
+    >;
+    deleteEventList: FunctionReference<
+      "mutation",
+      "public",
+      { listId: Id<"eventLists"> },
+      any
+    >;
+    subscribeToList: FunctionReference<
+      "mutation",
+      "public",
+      { eventId: Id<"events">; listId: Id<"eventLists">; userId: string },
+      any
+    >;
+    getListSubscriptions: FunctionReference<
+      "query",
+      "public",
+      { listId: Id<"eventLists"> },
+      any
+    >;
+    getEventListById: FunctionReference<
+      "query",
+      "public",
+      { listId: Id<"eventLists"> },
+      any
+    >;
+    getListValidators: FunctionReference<
+      "query",
+      "public",
+      { listId: Id<"eventLists"> },
+      any
+    >;
+    removeValidator: FunctionReference<
+      "mutation",
+      "public",
+      { adminId: string; validatorId: Id<"listValidators"> },
+      any
+    >;
+    updateValidatorUserId: FunctionReference<
+      "mutation",
+      "public",
+      { email: string; userId: string; validationUrl: string },
       any
     >;
   };

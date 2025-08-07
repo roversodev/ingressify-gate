@@ -1,24 +1,29 @@
 {
   "expo": {
-    "name": "ingressify-gate",
+    "name": "Ingressify Gate",
     "slug": "ingressify-gate",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "ingressifyappleitor",
+    "scheme": "ingressify-gate",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "br.com.ingressifygate",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
+        "backgroundColor": "#232323"
       },
       "edgeToEdgeEnabled": true,
       "permissions": [
-        "android.permission.CAMERA"
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
       ],
       "package": "br.com.ingressifygate"
     },
@@ -35,12 +40,17 @@
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 200,
           "resizeMode": "contain",
-          "backgroundColor": "#ffffff"
+          "backgroundColor": "#232323"
         }
       ],
       "expo-secure-store",
       "expo-web-browser",
-      "expo-barcode-scanner"
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Permitir Ingressify Gate acessar sua câmera para escanear ingressos"
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true

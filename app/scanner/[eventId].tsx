@@ -246,13 +246,13 @@ export default function ScannerScreen() {
           </Text>
         )}
         {isEventOwner() && (
-        <TouchableOpacity
-          onPress={() => router.push(`/scanner/validators?eventId=${eventId}`)}
-          style={styles.validatorsButton}
-        >
-          <IconSymbol name="person.2" size={20} color="#fff" />
-        </TouchableOpacity>
-      )}
+          <TouchableOpacity
+            onPress={() => router.push(`/scanner/validators?eventId=${eventId}`)}
+            style={styles.validatorsButton}
+          >
+            <IconSymbol name="person.2" size={20} color="#fff" />
+          </TouchableOpacity>
+        )}
       </View>
 
       <CameraView

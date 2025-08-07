@@ -20,7 +20,6 @@
     "convex-helpers": "^0.1.100",
     "expo": "~53.0.10",
     "expo-auth-session": "~6.2.0",
-    "expo-barcode-scanner": "^13.0.1",
     "expo-blur": "~14.1.5",
     "expo-camera": "~16.1.7",
     "expo-constants": "~17.1.6",
@@ -43,7 +42,9 @@
     "react-native-safe-area-context": "5.4.0",
     "react-native-screens": "~4.11.1",
     "react-native-web": "~0.20.0",
-    "react-native-webview": "13.13.5"
+    "react-native-webview": "13.13.5",
+    "@react-native-async-storage/async-storage": "2.1.2",
+    "@react-native-community/netinfo": "11.4.1"
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",

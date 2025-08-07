@@ -11,8 +11,8 @@ import 'react-native-reanimated';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import React from 'react';
 
-const publishableKey = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY!;
-const convexUrl = process.env.EXPO_PUBLIC_CONVEX_URL!;
+const publishableKey = 'pk_live_Y2xlcmsuaW5ncmVzc2lmeS5jb20uYnIk';
+const convexUrl = 'https://helpful-stingray-396.convex.cloud';
 
 if (!publishableKey) {
   throw new Error('Missing Clerk Publishable Key');

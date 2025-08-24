@@ -1,13 +1,14 @@
+import { IconSymbol } from '@/components/ui/IconSymbol';
 import { useOAuth, useSignIn } from '@clerk/clerk-expo';
 import { makeRedirectUri } from 'expo-auth-session';
 import { useRouter } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import React, { useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   Image,
   SafeAreaView,
-  StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
@@ -24,9 +25,12 @@ export default function SignInScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isGoogleLoading, setIsGoogleLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   const onPressGoogleSignIn = React.useCallback(async () => {
     try {
+      setIsGoogleLoading(true);
       const { createdSessionId, signIn, signUp, setActive } = await startOAuthFlow({
         redirectUrl: makeRedirectUri({
           scheme: 'your-app-scheme', // Você pode mudar isso
@@ -43,6 +47,8 @@ export default function SignInScreen() {
     } catch (err) {
       console.error('OAuth error', err);
       Alert.alert('Erro', 'Falha ao fazer login com Google');
+    } finally {
+      setIsGoogleLoading(false);
     }
   }, []);
 
@@ -78,190 +84,135 @@ export default function SignInScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.content}>
-        <View style={styles.header}>
-          {/* Adicionando a logo */}
-          <Image 
-            source={require('../../assets/images/logo.png')} 
-            style={styles.logo} 
-            resizeMode="contain"
-          />
-          <Text style={styles.title}>Bem-vindo!</Text>
-          <Text style={styles.subtitle}>
+    <SafeAreaView className="flex-1 bg-background">
+      <View className="flex-1 justify-center px-6">
+        {/* Header com Logo */}
+        <View className="items-center mb-12">
+          <View className="w-60 h-60">
+            <Image 
+              source={require('../../assets/images/logo.png')} 
+              className="w-full h-full"
+              resizeMode="contain"
+            />
+          </View>
+          <Text className="text-3xl font-bold text-white mb-3">Bem-vindo!</Text>
+          <Text className="text-textSecondary text-center text-base leading-6 max-w-sm">
             Faça login para acessar o app de validação de ingressos
           </Text>
         </View>
 
-        <View style={styles.formContainer}>
-          <TextInput
-            style={styles.input}
-            placeholder="Email"
-            placeholderTextColor="#A3A3A3"
-            value={email}
-            onChangeText={setEmail}
-            keyboardType="email-address"
-            autoCapitalize="none"
-          />
-          <TextInput
-            style={styles.input}
-            placeholder="Senha"
-            placeholderTextColor="#A3A3A3"
-            value={password}
-            onChangeText={setPassword}
-            secureTextEntry
-          />
+        {/* Formulário de Login */}
+        <View className="mb-8">
+          {/* Campo de Email */}
+          <View className="mb-4">
+            <View className="bg-backgroundCard rounded-xl px-4 py-4 flex-row items-center">
+              <IconSymbol name="envelope" size={20} color="#6B7280" />
+              <TextInput
+                className="flex-1 text-white text-base ml-3"
+                placeholder="Email"
+                placeholderTextColor="#6B7280"
+                value={email}
+                onChangeText={setEmail}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                autoComplete="email"
+              />
+            </View>
+          </View>
+
+          {/* Campo de Senha */}
+          <View className="mb-6">
+            <View className="bg-backgroundCard rounded-xl px-4 py-4 flex-row items-center">
+              <IconSymbol name="lock" size={20} color="#6B7280" />
+              <TextInput
+                className="flex-1 text-white text-base ml-3 mr-3"
+                placeholder="Senha"
+                placeholderTextColor="#6B7280"
+                value={password}
+                onChangeText={setPassword}
+                secureTextEntry={!showPassword}
+                autoComplete="password"
+              />
+              <TouchableOpacity 
+                onPress={() => setShowPassword(!showPassword)}
+                className="p-1"
+              >
+                <IconSymbol 
+                  name={showPassword ? "eye.slash" : "eye"} 
+                  size={20} 
+                  color="#6B7280" 
+                />
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* Botão de Login com Email */}
           <TouchableOpacity 
-            style={styles.emailButton} 
+            className={`bg-primary py-4 rounded-xl shadow-lg active:bg-primary/90 ${
+              isLoading ? 'opacity-50' : ''
+            }`}
             onPress={onPressEmailSignIn}
             disabled={isLoading}
           >
-            <Text style={styles.emailButtonText}>
-              {isLoading ? 'Entrando...' : 'Entrar com Email'}
-            </Text>
+            <View className="flex-row items-center justify-center">
+              {isLoading && (
+                <ActivityIndicator size="small" color="#FFF" className="mr-2" />
+              )}
+              <Text className="text-white text-center font-bold text-base">
+                {isLoading ? 'Entrando...' : 'Entrar com Email'}
+              </Text>
+            </View>
           </TouchableOpacity>
         </View>
 
-        <View style={styles.divider}>
-          <View style={styles.dividerLine} />
-          <Text style={styles.dividerText}>ou</Text>
-          <View style={styles.dividerLine} />
+        {/* Divisor */}
+        <View className="flex-row items-center mb-8">
+          <View className="flex-1 h-px bg-gray-600" />
+          <Text className="text-textSecondary px-4 text-sm">ou</Text>
+          <View className="flex-1 h-px bg-gray-600" />
         </View>
 
-        <View style={styles.buttonContainer}>
-          <TouchableOpacity style={styles.googleButton} onPress={onPressGoogleSignIn}>
-            <Text style={styles.googleButtonText}>Continuar com Google</Text>
+        {/* Botão do Google */}
+        <View className="mb-8">
+          <TouchableOpacity 
+            className={`bg-backgroundCard border border-gray-600 py-4 rounded-xl shadow-sm active:bg-gray-700 ${
+              isGoogleLoading ? 'opacity-50' : ''
+            }`}
+            onPress={onPressGoogleSignIn}
+            disabled={isGoogleLoading}
+          >
+            <View className="flex-row items-center justify-center">
+              {isGoogleLoading ? (
+                <ActivityIndicator size="small" color="#FFF" className="mr-3" />
+              ) : (
+                <View className="w-5 h-5 mr-3">
+                  <IconSymbol name="globe" size={20} color="#FFF" />
+                </View>
+              )}
+              <Text className="text-white font-semibold text-base">
+                {isGoogleLoading ? 'Conectando...' : 'Continuar com Google'}
+              </Text>
+            </View>
           </TouchableOpacity>
         </View>
 
-        <View style={styles.signUpContainer}>
-          <Text style={styles.signUpText}>Não tem uma conta?</Text>
-          <TouchableOpacity onPress={navigateToSignUp}>
-            <Text style={styles.signUpLink}>Cadastre-se</Text>
+        {/* Link de Cadastro */}
+        <View className="flex-row justify-center items-center mb-8">
+          <Text className="text-textSecondary text-sm">Não tem uma conta? </Text>
+          <TouchableOpacity onPress={navigateToSignUp} className="ml-1">
+            <Text className="text-primary font-semibold text-sm">Cadastre-se</Text>
           </TouchableOpacity>
         </View>
 
-        <View style={styles.footer}>
-          <Text style={styles.footerText}>
-            Ao continuar, você concorda com nossos termos de uso
+        {/* Footer */}
+        <View className="items-center">
+          <Text className="text-textSecondary text-xs text-center leading-4 max-w-xs">
+            Ao continuar, você concorda com nossos{' '}
+            <Text className="text-primary">termos de uso</Text> e{' '}
+            <Text className="text-primary">política de privacidade</Text>
           </Text>
         </View>
       </View>
     </SafeAreaView>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#232323', // bg-body
-  },
-  content: {
-    flex: 1,
-    justifyContent: 'center',
-    paddingHorizontal: 24,
-  },
-  header: {
-    alignItems: 'center',
-    marginBottom: 32,
-  },
-  // Adicionando estilo para a logo
-  logo: {
-    width: 200,
-    height: 200,
-    marginBottom: 16,
-  },
-  title: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    color: '#FFFFFF',
-    marginBottom: 8,
-  },
-  subtitle: {
-    fontSize: 16,
-    color: '#A3A3A3', // text-secondary
-    textAlign: 'center',
-    lineHeight: 24,
-  },
-  formContainer: {
-    marginBottom: 24,
-  },
-  input: {
-    backgroundColor: '#181818', // bg-card
-    borderRadius: 8,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    color: '#FFFFFF',
-    fontSize: 16,
-    marginBottom: 12,
-  },
-  emailButton: {
-    backgroundColor: '#E65CFF', // bg-destaque
-    paddingVertical: 16,
-    paddingHorizontal: 24,
-    borderRadius: 8,
-    alignItems: 'center',
-    marginTop: 8,
-  },
-  emailButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  divider: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginVertical: 16,
-  },
-  dividerLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: '#3f3f46', // text-secondary
-  },
-  dividerText: {
-    color: '#A3A3A3', // text-secondary
-    paddingHorizontal: 16,
-    fontSize: 14,
-  },
-  buttonContainer: {
-    marginBottom: 24,
-  },
-  googleButton: {
-    backgroundColor: '#181818', // bg-card
-    paddingVertical: 16,
-    paddingHorizontal: 24,
-    borderRadius: 8,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#3f3f46', // text-secondary
-  },
-  googleButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  signUpContainer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    marginBottom: 24,
-  },
-  signUpText: {
-    color: '#A3A3A3', // text-secondary
-    fontSize: 14,
-  },
-  signUpLink: {
-    color: '#E65CFF', // text-destaque
-    fontSize: 14,
-    fontWeight: '600',
-    marginLeft: 4,
-  },
-  footer: {
-    alignItems: 'center',
-  },
-  footerText: {
-    fontSize: 12,
-    color: '#A3A3A3', // text-secondary
-    textAlign: 'center',
-    lineHeight: 18,
-  },
-});

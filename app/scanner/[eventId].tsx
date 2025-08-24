@@ -202,10 +202,35 @@ export default function ScannerScreen() {
     } catch (error: any) {
       console.error('Erro ao validar ingresso:', error);
 
+      // Extrair a mensagem de erro específica do Convex
+      let errorMessage = 'Não foi possível validar o ingresso. Verifique sua conexão e tente novamente.';
+      let errorTitle = 'Erro de Conexão';
+      
+      if (error?.message) {
+        // Se o erro contém uma mensagem específica do servidor
+        if (error.message.includes('Este ingresso não pertence a este evento')) {
+          errorTitle = 'Evento Incorreto';
+          errorMessage = 'Este ingresso não pertence a este evento.';
+        } else if (error.message.includes('Ingresso já foi utilizado')) {
+          errorTitle = 'Ingresso Já Utilizado';
+          errorMessage = 'Este ingresso já foi utilizado anteriormente.';
+        } else if (error.message.includes('Ingresso reembolsado')) {
+          errorTitle = 'Ingresso Reembolsado';
+          errorMessage = 'Este ingresso foi reembolsado e não é mais válido.';
+        } else if (error.message.includes('Ingresso cancelado')) {
+          errorTitle = 'Ingresso Cancelado';
+          errorMessage = 'Este ingresso foi cancelado.';
+        } else {
+          // Para outros erros específicos, usar a mensagem do erro
+          errorMessage = error.message;
+          errorTitle = 'Erro de Validação';
+        }
+      }
+
       showAlert(
         'error',
-        'Erro de Conexão',
-        'Não foi possível validar o ingresso. Verifique sua conexão e tente novamente.',
+        errorTitle,
+        errorMessage,
         [{
           text: 'OK',
           onPress: () => {
@@ -223,7 +248,7 @@ export default function ScannerScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView className='flex-1 bg-background'>
       <CustomAlert
         visible={alert.visible}
         type={alert.type}
@@ -233,17 +258,19 @@ export default function ScannerScreen() {
         onClose={() => setAlert(prev => ({ ...prev, visible: false }))}
       />
 
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <Text style={styles.backButtonText}>← Voltar</Text>
+      <View className='bg-background flex-row items-center py-4 px-3'>
+        <TouchableOpacity onPress={() => router.back()} className='mr-4'>
+          <Text className='text-primary text-[16px]'>← Voltar</Text>
         </TouchableOpacity>
-        <Text style={styles.title}>
+        <Text className='text-white text-[18px] font-semibold flex-1'>
           {event?.name ? `${event.name}` : 'Scanner QR Code'}
         </Text>
         {event && availability && (
-          <Text style={styles.text}>
-            {availability.validatedTickets}/{availability.purchasedTickets} validados
-          </Text>
+          <View className="bg-backgroundCard px-3 py-1 rounded-full mr-2">
+            <Text className="text-primary text-sm font-bold">
+              {availability.validatedTickets}/{availability.purchasedTickets}
+            </Text>
+          </View>
         )}
         {isEventOwner() && (
           <TouchableOpacity
@@ -253,6 +280,12 @@ export default function ScannerScreen() {
             <IconSymbol name="person.2" size={20} color="#fff" />
           </TouchableOpacity>
         )}
+        <TouchableOpacity
+          style={styles.listsButton}
+          onPress={() => router.push(`/scanner/lists?eventId=${eventId}`)}
+        >
+          <IconSymbol size={20} color="#FFFFFF" name={'list.bullet'} />
+        </TouchableOpacity>
       </View>
 
       <CameraView
@@ -284,7 +317,6 @@ export default function ScannerScreen() {
     </SafeAreaView>
   );
 }
-
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -295,7 +327,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 12,
-    backgroundColor: '#181818', // bg-card
+    backgroundColor: '#232323', // bg-card
   },
   backButton: {
     marginRight: 16,
@@ -387,6 +419,15 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   validatorsButton: {
+    backgroundColor: '#E65CFF',
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 10,
+  },
+  listsButton: {
     backgroundColor: '#E65CFF',
     width: 40,
     height: 40,

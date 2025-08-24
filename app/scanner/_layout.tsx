@@ -7,6 +7,8 @@ export default function ScannerLayout() {
       <Stack.Screen name="[eventId]" />
       <Stack.Screen name="search" />
       <Stack.Screen name="validators" />
+      <Stack.Screen name="lists" />
+      <Stack.Screen name="list-validation" />
     </Stack>
   );
 }

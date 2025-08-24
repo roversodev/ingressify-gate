@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
   Animated,
-  StyleSheet,
   Text,
   TouchableOpacity,
   View,
@@ -77,25 +76,25 @@ const CustomAlert: React.FC<CustomAlertProps> = ({
 
   if (!visible) return null;
 
-  // Definir cores com base no tipo
-  let borderColor;
-  let statusDot;
+  // Definir cores com base no tipo usando Tailwind
+  let borderColorClass;
+  let statusDotColor;
   switch (type) {
     case 'success':
-      borderColor = '#4CAF50';
-      statusDot = '●';
+      borderColorClass = 'border-l-green-500';
+      statusDotColor = '#4CAF50';
       break;
     case 'warning':
-      borderColor = '#FFB800';
-      statusDot = '●';
+      borderColorClass = 'border-l-yellow-500';
+      statusDotColor = '#FFB800';
       break;
     case 'error':
-      borderColor = '#FF4D4D';
-      statusDot = '●';
+      borderColorClass = 'border-l-red-500';
+      statusDotColor = '#FF4D4D';
       break;
     default:
-      borderColor = '#E65CFF';
-      statusDot = '●';
+      borderColorClass = 'border-l-primary';
+      statusDotColor = '#E65CFF';
   }
 
   // Função para destacar o tipo de ingresso na mensagem
@@ -114,12 +113,12 @@ const CustomAlert: React.FC<CustomAlertProps> = ({
         const [tipoLabel, tipoValue] = tipoPart.split(':');
         
         return (
-          <View style={styles.messageContainer}>
-            <View style={styles.ticketTypeContainer}>
-              <Text style={styles.ticketTypeLabel}>{tipoLabel}:</Text>
-              <Text style={styles.ticketTypeValue}>{tipoValue.trim()}</Text>
+          <View className="mt-2 ml-5">
+            <View className="flex-row items-center mb-1">
+              <Text className="text-gray-300 text-base font-bold">{tipoLabel}:</Text>
+              <Text className="text-primary text-lg font-bold ml-1">{tipoValue.trim()}</Text>
             </View>
-            <Text style={styles.alertMessage}>{qtdPart}</Text>
+            <Text className="text-gray-300 text-base mt-1">{qtdPart}</Text>
           </View>
         );
       } else {
@@ -132,12 +131,12 @@ const CustomAlert: React.FC<CustomAlertProps> = ({
           const [tipoLabel, tipoValue] = tipoPart.split(':');
           
           return (
-            <View style={styles.messageContainer}>
-              <View style={styles.ticketTypeContainer}>
-                <Text style={styles.ticketTypeLabel}>{tipoLabel}:</Text>
-                <Text style={styles.ticketTypeValue}>{tipoValue.trim()}</Text>
+            <View className="mt-2 ml-5">
+              <View className="flex-row items-center mb-1">
+                <Text className="text-gray-300 text-base font-bold">{tipoLabel}:</Text>
+                <Text className="text-primary text-lg font-bold ml-1">{tipoValue.trim()}</Text>
               </View>
-              <Text style={styles.alertMessage}>{qtdPart}</Text>
+              <Text className="text-gray-300 text-base mt-1">{qtdPart}</Text>
             </View>
           );
         }
@@ -145,154 +144,63 @@ const CustomAlert: React.FC<CustomAlertProps> = ({
     }
     
     // Caso não seja uma mensagem com tipo de ingresso, retorna o texto normal
-    return <Text style={styles.alertMessage}>{message}</Text>;
+    return <Text className="text-gray-300 text-base mt-1">{message}</Text>;
   };
 
   return (
     <Animated.View
-      style={[
-        styles.overlay,
-        {
-          opacity: fadeAnim,
-        },
-      ]}
+      className="absolute inset-0 justify-center items-center z-50 bg-black/50"
+      style={{
+        opacity: fadeAnim,
+      }}
     >
       <Animated.View
-        style={[
-          styles.alertContainer,
-          {
-            transform: [{ translateY: slideAnim }],
-            borderLeftColor: borderColor,
-          },
-        ]}
+        className={`w-[90%] bg-backgroundCard rounded-lg border-l-4 ${borderColorClass} flex-row items-center shadow-2xl py-4 px-5`}
+        style={{
+          transform: [{ translateY: slideAnim }],
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: 4 },
+          shadowOpacity: 0.3,
+          shadowRadius: 8,
+          elevation: 8,
+        }}
       >
-        <View style={styles.alertContent}>
-          <View style={styles.titleRow}>
-            <Text style={[styles.statusDot, { color: borderColor }]}>{statusDot}</Text>
-            <Text style={styles.alertTitle}>{title}</Text>
+        <View className="flex-1">
+          <View className="flex-row items-center mb-2">
+            <Text 
+              className="text-sm mr-2 font-bold"
+              style={{ color: statusDotColor }}
+            >
+              ●
+            </Text>
+            <Text className="text-white text-lg font-bold">{title}</Text>
           </View>
           {formatMessage()}
 
           {actions.length > 0 && (
-            <View style={styles.alertActions}>
+            <View className="flex-row justify-end mt-4">
               {actions.map((action, index) => (
                 <TouchableOpacity
                   key={index}
-                  style={styles.alertActionButton}
+                  className="bg-primary px-4 py-2 ml-2 rounded"
                   onPress={() => {
                     handleClose();
                     if (action.onPress) action.onPress();
                   }}
                 >
-                  <Text style={styles.alertActionText}>{action.text}</Text>
+                  <Text className="text-white font-bold text-base">{action.text}</Text>
                 </TouchableOpacity>
               ))}
             </View>
           )}
         </View>
 
-        <TouchableOpacity onPress={handleClose} style={styles.alertCloseButton}>
-          <Text style={styles.alertCloseText}>×</Text>
+        <TouchableOpacity onPress={handleClose} className="p-1">
+          <Text className="text-gray-400 text-xl font-bold">×</Text>
         </TouchableOpacity>
       </Animated.View>
     </Animated.View>
   );
 };
-
-const styles = StyleSheet.create({
-  overlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 1000,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-  },
-  alertContainer: {
-    width: '90%', // Aumentado de 85% para 90%
-    backgroundColor: '#181818',
-    borderRadius: 8,
-    borderLeftWidth: 4,
-    flexDirection: 'row',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-    elevation: 5,
-    paddingVertical: 16, // Aumentado de 12 para 16
-    paddingHorizontal: 20, // Aumentado de 16 para 20
-  },
-  alertContent: {
-    flex: 1,
-  },
-  titleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 8, // Aumentado de 4 para 8
-  },
-  statusDot: {
-    fontSize: 14, // Aumentado de 12 para 14
-    marginRight: 8,
-  },
-  alertTitle: {
-    color: '#FFFFFF',
-    fontWeight: 'bold',
-    fontSize: 18, // Aumentado de 16 para 18
-  },
-  messageContainer: {
-    marginTop: 8,
-    marginLeft: 20,
-  },
-  ticketTypeContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 4,
-  },
-  ticketTypeLabel: {
-    color: '#CCCCCC',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  ticketTypeValue: {
-    color: '#E65CFF',
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginLeft: 4,
-  },
-  alertMessage: {
-    color: '#CCCCCC',
-    fontSize: 16, // Aumentado de 14 para 16
-    marginTop: 4,
-  },
-  alertCloseButton: {
-    padding: 4,
-  },
-  alertCloseText: {
-    color: '#999999',
-    fontSize: 20, // Aumentado de 18 para 20
-    fontWeight: 'bold',
-  },
-  alertActions: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    marginTop: 16, // Aumentado de 12 para 16
-  },
-  alertActionButton: {
-    paddingHorizontal: 16, // Aumentado de 12 para 16
-    paddingVertical: 8, // Aumentado de 6 para 8
-    marginLeft: 8,
-    backgroundColor: '#E65CFF',
-    borderRadius: 4,
-  },
-  alertActionText: {
-    color: '#FFFFFF',
-    fontWeight: 'bold',
-    fontSize: 16, // Aumentado de 14 para 16
-  },
-});
 
 export default CustomAlert;

@@ -5,21 +5,19 @@ import { type GenericId as Id } from "convex/values";
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import {
-    ActivityIndicator,
-    Alert,
-    Clipboard,
-    FlatList,
-    KeyboardAvoidingView,
-    Platform,
-    SafeAreaView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Alert,
+  Clipboard,
+  FlatList,
+  KeyboardAvoidingView,
+  Platform,
+  SafeAreaView,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 
-// Importe o componente CustomAlert
 import CustomAlert from '@/components/CustomAlert';
 import { IconSymbol } from '@/components/ui/IconSymbol';
 
@@ -31,7 +29,6 @@ export default function ValidatorsScreen() {
   const [email, setEmail] = useState("");
   const [isInviting, setIsInviting] = useState(false);
   
-  // Estado para o alerta personalizado
   const [alert, setAlert] = useState<{
     visible: boolean;
     type: 'success' | 'warning' | 'error' | 'info';
@@ -46,20 +43,16 @@ export default function ValidatorsScreen() {
     actions: []
   });
 
-  // Buscar detalhes do evento
   const event = useQuery(api.events.getById, { eventId: eventId as Id<"events"> });
   
-  // Buscar validadores do evento
   const validators = useQuery(
     api.validators.getEventValidators, 
     user?.id ? { eventId: eventId as Id<"events">, userId: user.id } : "skip"
   );
 
-  // Mutations para convidar e remover validadores
   const inviteValidator = useMutation(api.validators.inviteValidator);
   const removeValidator = useMutation(api.validators.removeValidator);
 
-  // Função para mostrar alerta personalizado
   const showAlert = (
     type: 'success' | 'warning' | 'error' | 'info',
     title: string,
@@ -75,7 +68,6 @@ export default function ValidatorsScreen() {
     });
   };
 
-  // Função para enviar convite
   const handleInvite = async () => {
     if (!email.trim()) {
       showAlert('error', 'Erro', 'Por favor, informe um email válido');
@@ -100,7 +92,6 @@ export default function ValidatorsScreen() {
     }
   };
 
-  // Função para confirmar e remover validador
   const confirmRemoveValidator = (validatorId: Id<"ticketValidators">, validatorEmail: string) => {
     Alert.alert(
       "Remover validador",
@@ -116,7 +107,6 @@ export default function ValidatorsScreen() {
     );
   };
 
-  // Função para remover validador
   const handleRemoveValidator = async (validatorId: Id<"ticketValidators">) => {
     try {
       await removeValidator({ 
@@ -130,28 +120,27 @@ export default function ValidatorsScreen() {
     }
   };
 
-  // Renderizar status do validador
   const renderValidatorStatus = (status: string) => {
     switch (status) {
       case "pending":
         return (
-          <View style={[styles.statusBadge, styles.pendingBadge]}>
+          <View className="flex-row items-center px-3 py-1.5 bg-yellow-500/20 rounded-full">
             <IconSymbol name="clock" size={12} color="#F59E0B" />
-            <Text style={styles.pendingText}>Pendente</Text>
+            <Text className="text-yellow-500 text-xs ml-1.5 font-medium">Pendente</Text>
           </View>
         );
       case "accepted":
         return (
-          <View style={[styles.statusBadge, styles.acceptedBadge]}>
+          <View className="flex-row items-center px-3 py-1.5 bg-green-500/20 rounded-full">
             <IconSymbol name="checkmark.circle" size={12} color="#10B981" />
-            <Text style={styles.acceptedText}>Aceito</Text>
+            <Text className="text-green-500 text-xs ml-1.5 font-medium">Aceito</Text>
           </View>
         );
       case "rejected":
         return (
-          <View style={[styles.statusBadge, styles.rejectedBadge]}>
+          <View className="flex-row items-center px-3 py-1.5 bg-red-500/20 rounded-full">
             <IconSymbol name="xmark.circle" size={12} color="#EF4444" />
-            <Text style={styles.rejectedText}>Rejeitado</Text>
+            <Text className="text-red-500 text-xs ml-1.5 font-medium">Rejeitado</Text>
           </View>
         );
       default:
@@ -159,7 +148,6 @@ export default function ValidatorsScreen() {
     }
   };
 
-  // Função para copiar o link de convite
   const handleCopyInviteLink = (token: string) => {
     const inviteLink = `https://ingressify.com.br/convite/${token}`;
     Clipboard.setString(inviteLink);
@@ -173,9 +161,9 @@ export default function ValidatorsScreen() {
 
   if (!event || validators === undefined) {
     return (
-      <SafeAreaView style={styles.loadingContainer}>
+      <SafeAreaView className="flex-1 justify-center items-center bg-background">
         <ActivityIndicator size="large" color="#E65CFF" />
-        <Text style={styles.loadingText}>Carregando...</Text>
+        <Text className="text-white mt-4 text-base font-medium">Carregando...</Text>
       </SafeAreaView>
     );
   }
@@ -183,87 +171,106 @@ export default function ValidatorsScreen() {
   return (
     <KeyboardAvoidingView 
       behavior={Platform.OS === "ios" ? "padding" : "height"}
-      style={styles.container}
+      className="flex-1 bg-background"
     >
-      <SafeAreaView style={styles.container}>
+      <SafeAreaView className="flex-1">
         {/* Header */}
-        <View style={styles.header}>
+        <View className="flex-row items-center px-4 py-3 border-b border-backgroundCard">
           <TouchableOpacity 
-            style={styles.backButton} 
+            className="p-2 -ml-2" 
             onPress={() => router.back()}
           >
-            <IconSymbol name="chevron.left" size={24} color="#fff" />
+            <IconSymbol name="arrow.left" size={24} color="#E65CFF" />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Validadores - {event.name}</Text>
+          <Text className="text-white text-lg font-bold ml-2 flex-1" numberOfLines={1}>
+            Validadores - {event.name}
+          </Text>
         </View>
 
         {/* Formulário para convidar validadores */}
-        <View style={styles.formContainer}>
-          <Text style={styles.sectionTitle}>
-            <IconSymbol name="person.badge.plus" size={18} color="#E65CFF" style={styles.sectionIcon} />
-            Convidar Validador
-          </Text>
+        <View className="mx-4 mt-6 p-5 bg-backgroundCard rounded-xl shadow-lg">
+          <View className="flex-row items-center mb-4">
+            <IconSymbol name="person.badge.plus" size={20} color="#E65CFF" />
+            <Text className="text-white text-base font-semibold ml-2">
+              Convidar Validador
+            </Text>
+          </View>
           
-          <View style={styles.inputContainer}>
+          <View className="flex-row items-center gap-3">
             <TextInput
-              style={styles.input}
+              className="flex-1 bg-progressBar rounded-lg px-4 py-3.5 text-white text-base"
               placeholder="Email do validador"
-              placeholderTextColor="#666"
+              placeholderTextColor="#A3A3A3"
               value={email}
               onChangeText={setEmail}
               keyboardType="email-address"
               autoCapitalize="none"
             />
             <TouchableOpacity 
-              style={styles.inviteButton}
+              className={`px-6 py-3.5 rounded-lg justify-center items-center min-w-[90px] ${
+                isInviting ? 'bg-primary/70' : 'bg-primary'
+              }`}
               onPress={handleInvite}
               disabled={isInviting}
             >
               {isInviting ? (
                 <ActivityIndicator size="small" color="#fff" />
               ) : (
-                <Text style={styles.inviteButtonText}>Convidar</Text>
+                <Text className="text-white font-semibold text-sm">Convidar</Text>
               )}
             </TouchableOpacity>
           </View>
         </View>
 
         {/* Lista de validadores */}
-        <View style={styles.validatorsContainer}>
-          <Text style={styles.sectionTitle}>
-            <IconSymbol name="person.2" size={18} color="#E65CFF" style={styles.sectionIcon} />
-            Validadores ({validators.length})
-          </Text>
+        <View className="flex-1 px-4 mt-6">
+          <View className="flex-row items-center mb-4">
+            <IconSymbol name="person.2" size={20} color="#E65CFF" />
+            <Text className="text-white text-base font-semibold ml-2">
+              Validadores ({validators.length})
+            </Text>
+          </View>
           
           {validators.length === 0 ? (
-            <View style={styles.emptyContainer}>
-              <Text style={styles.emptyText}>Nenhum validador convidado</Text>
+            <View className="bg-backgroundCard rounded-xl p-8 items-center justify-center">
+              <IconSymbol name="person.2" size={48} color="#A3A3A3" />
+              <Text className="text-textSecondary text-base mt-3 font-medium">
+                Nenhum validador convidado
+              </Text>
+              <Text className="text-textSecondary text-sm mt-1 text-center">
+                Convide validadores para ajudar na verificação dos ingressos
+              </Text>
             </View>
           ) : (
             <FlatList
               data={validators}
               keyExtractor={(item) => item._id}
+              showsVerticalScrollIndicator={false}
               renderItem={({ item }) => (
-                <View style={styles.validatorItem}>
-                  <View style={styles.validatorInfo}>
-                    <Text style={styles.validatorEmail}>{item.email}</Text>
-                    {renderValidatorStatus(item.status)}
-                  </View>
-                  <View style={styles.actionButtons}>
-                    {item.status === "pending" && (
+                <View className="bg-backgroundCard rounded-xl p-4 mb-3 shadow-sm">
+                  <View className="flex-row items-center justify-between">
+                    <View className="flex-1 mr-3">
+                      <Text className="text-white text-base font-medium mb-2">
+                        {item.email}
+                      </Text>
+                      {renderValidatorStatus(item.status)}
+                    </View>
+                    <View className="flex-row items-center gap-2">
+                      {item.status === "pending" && (
+                        <TouchableOpacity 
+                          className="p-2.5 bg-primary/10 rounded-lg"
+                          onPress={() => handleCopyInviteLink(item.inviteToken)}
+                        >
+                          <IconSymbol name="doc.on.doc" size={18} color="#E65CFF" />
+                        </TouchableOpacity>
+                      )}
                       <TouchableOpacity 
-                        style={styles.copyButton}
-                        onPress={() => handleCopyInviteLink(item.inviteToken)}
+                        className="p-2.5 bg-red-500/10 rounded-lg"
+                        onPress={() => confirmRemoveValidator(item._id as Id<"ticketValidators">, item.email)}
                       >
-                        <IconSymbol name="doc.on.doc" size={18} color="#E65CFF" />
+                        <IconSymbol name="trash" size={18} color="#EF4444" />
                       </TouchableOpacity>
-                    )}
-                    <TouchableOpacity 
-                      style={styles.removeButton}
-                      onPress={() => confirmRemoveValidator(item._id as Id<"ticketValidators">, item.email)}
-                    >
-                      <IconSymbol name="trash" size={18} color="#EF4444" />
-                    </TouchableOpacity>
+                    </View>
                   </View>
                 </View>
               )}
@@ -271,7 +278,6 @@ export default function ValidatorsScreen() {
           )}
         </View>
 
-        {/* Alerta personalizado */}
         <CustomAlert
           visible={alert.visible}
           type={alert.type}
@@ -284,155 +290,3 @@ export default function ValidatorsScreen() {
     </KeyboardAvoidingView>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#121212',
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#121212',
-  },
-  loadingText: {
-    color: '#fff',
-    marginTop: 10,
-    fontSize: 16,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#232323',
-  },
-  backButton: {
-    padding: 8,
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#fff',
-    marginLeft: 8,
-  },
-  formContainer: {
-    padding: 16,
-    backgroundColor: '#1E1E1E',
-    margin: 16,
-    borderRadius: 8,
-  },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#fff',
-    marginBottom: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  sectionIcon: {
-    marginRight: 8,
-  },
-  inputContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  input: {
-    flex: 1,
-    backgroundColor: '#2A2A2A',
-    borderRadius: 4,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    color: '#fff',
-    marginRight: 8,
-  },
-  inviteButton: {
-    backgroundColor: '#E65CFF',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 4,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  inviteButtonText: {
-    color: '#fff',
-    fontWeight: 'bold',
-  },
-  validatorsContainer: {
-    flex: 1,
-    padding: 16,
-  },
-  emptyContainer: {
-    padding: 16,
-    backgroundColor: '#1E1E1E',
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  emptyText: {
-    color: '#666',
-    fontSize: 14,
-  },
-  validatorItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: '#1E1E1E',
-    padding: 12,
-    borderRadius: 8,
-    marginBottom: 8,
-  },
-  validatorInfo: {
-    flex: 1,
-  },
-  validatorEmail: {
-    color: '#fff',
-    fontSize: 14,
-    marginBottom: 4,
-  },
-  statusBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-    alignSelf: 'flex-start',
-  },
-  pendingBadge: {
-    backgroundColor: 'rgba(245, 158, 11, 0.2)',
-  },
-  pendingText: {
-    color: '#F59E0B',
-    fontSize: 12,
-    marginLeft: 4,
-  },
-  acceptedBadge: {
-    backgroundColor: 'rgba(16, 185, 129, 0.2)',
-  },
-  acceptedText: {
-    color: '#10B981',
-    fontSize: 12,
-    marginLeft: 4,
-  },
-  rejectedBadge: {
-    backgroundColor: 'rgba(239, 68, 68, 0.2)',
-  },
-  rejectedText: {
-    color: '#EF4444',
-    fontSize: 12,
-    marginLeft: 4,
-  },
-  removeButton: {
-    padding: 8,
-  },
-  copyButton: {
-    padding: 8,
-    marginRight: 8,
-  },
-  actionButtons: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-});

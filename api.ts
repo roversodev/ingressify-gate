@@ -156,7 +156,7 @@ export type PublicApiType = {
         eventEndDate: number;
         eventStartDate: number;
         latitude?: number;
-        location: string;
+        location?: string;
         longitude?: number;
         name: string;
         organizationId: Id<"organizations">;
@@ -983,6 +983,7 @@ export type PublicApiType = {
       { cpf: string; userId?: string },
       any
     >;
+    getUserStats: FunctionReference<"query", "public", { userId: string }, any>;
   };
   validators: {
     inviteValidator: FunctionReference<
@@ -1123,6 +1124,174 @@ export type PublicApiType = {
       "query",
       "public",
       { period?: string; userId: string },
+      any
+    >;
+    getRevenueData: FunctionReference<
+      "query",
+      "public",
+      { userId: string },
+      any
+    >;
+    getTicketSalesData: FunctionReference<
+      "query",
+      "public",
+      { userId: string },
+      any
+    >;
+    getRevenueChurnData: FunctionReference<
+      "query",
+      "public",
+      { userId: string },
+      any
+    >;
+    getRefundsData: FunctionReference<
+      "query",
+      "public",
+      { userId: string },
+      any
+    >;
+    getEventLocationStats: FunctionReference<
+      "query",
+      "public",
+      { userId: string },
+      any
+    >;
+    getUserGrowthData: FunctionReference<
+      "query",
+      "public",
+      { userId: string },
+      any
+    >;
+    getByTransactionIdMutation: FunctionReference<
+      "mutation",
+      "public",
+      { transactionId: string },
+      any
+    >;
+    getTicketsByTransactionIdMutation: FunctionReference<
+      "mutation",
+      "public",
+      { transactionId: string },
+      any
+    >;
+    getTicketsByEmailMutation: FunctionReference<
+      "mutation",
+      "public",
+      { email: string; eventId?: Id<"events"> },
+      any
+    >;
+    getTicketsByCpfMutation: FunctionReference<
+      "mutation",
+      "public",
+      { cpf: string; eventId?: Id<"events"> },
+      any
+    >;
+    getOrganizationTransactionsMutation: FunctionReference<
+      "mutation",
+      "public",
+      { organizationId: Id<"organizations">; userId: string },
+      any
+    >;
+    getOrganizationTransactions: FunctionReference<
+      "query",
+      "public",
+      {
+        eventId?: Id<"events">;
+        organizationId: Id<"organizations">;
+        userId: string;
+      },
+      any
+    >;
+    getPlatformFinancialMetrics: FunctionReference<
+      "query",
+      "public",
+      { endDate?: number; startDate?: number; userId: string },
+      any
+    >;
+    listAllOrganizationWithdrawals: FunctionReference<
+      "query",
+      "public",
+      {
+        limit?: number;
+        skip?: number;
+        status?:
+          | "pending"
+          | "processing"
+          | "completed"
+          | "failed"
+          | "cancelled";
+        userId: string;
+      },
+      any
+    >;
+    processWithdrawal: FunctionReference<
+      "mutation",
+      "public",
+      {
+        action: "approve" | "complete" | "reject" | "cancel";
+        adminUserId: string;
+        notes?: string;
+        receiptStorageId?: Id<"_storage">;
+        withdrawalId: Id<"organizationWithdrawals">;
+      },
+      any
+    >;
+    getWithdrawalDetails: FunctionReference<
+      "query",
+      "public",
+      { userId: string; withdrawalId: Id<"organizationWithdrawals"> },
+      any
+    >;
+    listAllTickets: FunctionReference<
+      "query",
+      "public",
+      { userId: string },
+      any
+    >;
+    getTicketsForEvent: FunctionReference<
+      "query",
+      "public",
+      { eventId: Id<"events">; userId: string },
+      any
+    >;
+    getAllPlatformTickets: FunctionReference<
+      "query",
+      "public",
+      {
+        eventId?: Id<"events">;
+        limit?: number;
+        status?: "valid" | "used" | "refunded" | "cancelled";
+        userId: string;
+      },
+      any
+    >;
+    updateTicketStatusAdmin: FunctionReference<
+      "mutation",
+      "public",
+      {
+        newStatus: "valid" | "used" | "refunded" | "cancelled";
+        reason?: string;
+        ticketId: Id<"tickets">;
+        userId: string;
+      },
+      any
+    >;
+    getTicketDetails: FunctionReference<
+      "query",
+      "public",
+      { ticketId: Id<"tickets">; userId: string },
+      any
+    >;
+    getTicketsByEmailAdmin: FunctionReference<
+      "query",
+      "public",
+      { email: string; eventId?: Id<"events">; userId: string },
+      any
+    >;
+    getTicketsByCpfAdmin: FunctionReference<
+      "query",
+      "public",
+      { cpf: string; eventId?: Id<"events">; userId: string },
       any
     >;
   };

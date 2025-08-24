@@ -9,7 +9,11 @@
       "distribution": "internal"
     },
     "preview": {
-      "distribution": "internal"
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY": "$CLERK_PUBLISHABLE_KEY",
+        "EXPO_PUBLIC_CONVEX_URL": "$CONVEX_URL"
+      }
     },
     "production": {
       "autoIncrement": true

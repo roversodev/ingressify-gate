@@ -10,7 +10,6 @@ import {
     Animated,
     FlatList,
     SafeAreaView,
-    StyleSheet,
     Text,
     TextInput,
     TouchableOpacity,
@@ -117,7 +116,7 @@ export default function SearchTicketsScreen() {
                 showAlert(
                     'success',
                     'Ingresso Válido',
-                    `Tipo: ${result.ticketType?.name || 'N/A'}\nQuantidade: ${result.ticket?.quantity || 1}`
+                    `Tipo: ${result.ticketType?.name || 'N/A'} | Qtd: ${result.ticket?.quantity || 1}`
                 );
                 
                 // Atualizar a lista após validação bem-sucedida
@@ -162,36 +161,56 @@ export default function SearchTicketsScreen() {
 
         return (
             <Animated.View 
-                style={[
-                    styles.ticketItem, 
-                    isUsed && styles.usedTicket, 
-                    isInvalid && styles.invalidTicket,
-                    { opacity: new Animated.Value(1) }
-                ]}
+                className={`bg-backgroundCard rounded-lg p-4 mb-3 flex-row justify-between items-center shadow-lg ${
+                    isUsed ? 'border-l-4 border-l-yellow-500' : 
+                    isInvalid ? 'border-l-4 border-l-red-500' : ''
+                }`}
+                style={{
+                    opacity: new Animated.Value(1),
+                    shadowColor: '#000',
+                    shadowOffset: { width: 0, height: 2 },
+                    shadowOpacity: 0.1,
+                    shadowRadius: 4,
+                    elevation: 2,
+                }}
             >
-                <View style={styles.ticketInfo}>
-                    <Text style={styles.ticketName}>{item.user?.name || 'Nome não disponível'}</Text>
-                    <Text style={styles.ticketDetail}>{item.user?.email || 'Email não disponível'}</Text>
-                    <Text style={styles.ticketDetail}>CPF: {item.user?.cpf || 'Não disponível'}</Text>
-                    <Text style={styles.ticketDetail}>Tipo: {item.ticketType?.name || 'Não disponível'}</Text>
-                    <Text style={styles.ticketStatus}>
-                        <Text style={[styles.statusDot, 
-                            isUsed ? styles.usedDot : 
-                            isInvalid ? styles.invalidDot : 
-                            styles.validDot
-                        ]}>●</Text> 
-                        {item.status === 'used' ? 'Utilizado' :
-                        item.status === 'refunded' ? 'Reembolsado' :
-                        item.status === 'cancelled' ? 'Cancelado' : 'Disponível'}
+                <View className="flex-1">
+                    <Text className="text-white text-base font-bold mb-1">
+                        {item.user?.name || 'Nome não disponível'}
                     </Text>
+                    <Text className="text-gray-300 text-sm mb-0.5">
+                        {item.user?.email || 'Email não disponível'}
+                    </Text>
+                    <Text className="text-gray-300 text-sm mb-0.5">
+                        CPF: {item.user?.cpf || 'Não disponível'}
+                    </Text>
+                    <Text className="text-gray-300 text-sm mb-1">
+                        Tipo: <Text className="text-primary font-bold">{item.ticketType?.name || 'Não disponível'}</Text>
+                    </Text>
+                    <View className="flex-row items-center mt-1">
+                        <Text 
+                            className={`text-xs mr-1.5 ${
+                                isUsed ? 'text-yellow-500' : 
+                                isInvalid ? 'text-red-500' : 
+                                'text-green-500'
+                            }`}
+                        >
+                            ●
+                        </Text>
+                        <Text className="text-white text-sm font-bold">
+                            {item.status === 'used' ? 'Utilizado' :
+                            item.status === 'refunded' ? 'Reembolsado' :
+                            item.status === 'cancelled' ? 'Cancelado' : 'Disponível'}
+                        </Text>
+                    </View>
                 </View>
 
                 {!isUsed && !isInvalid && (
                     <TouchableOpacity
-                        style={styles.validateButton}
+                        className="bg-primary px-4 py-2 rounded-lg"
                         onPress={() => handleValidateTicket(item._id)}
                     >
-                        <Text style={styles.validateButtonText}>Validar</Text>
+                        <Text className="text-white text-sm font-bold">Validar</Text>
                     </TouchableOpacity>
                 )}
             </Animated.View>
@@ -199,7 +218,7 @@ export default function SearchTicketsScreen() {
     };
 
     return (
-        <SafeAreaView style={styles.container}>
+        <SafeAreaView className="flex-1 bg-background">
             <CustomAlert 
                 visible={alert.visible}
                 type={alert.type}
@@ -209,34 +228,50 @@ export default function SearchTicketsScreen() {
                 onClose={() => setAlert(prev => ({ ...prev, visible: false }))}
             />
             
-            <View style={styles.header}>
-                <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-                    <Text style={styles.backButtonText}>← Voltar</Text>
+            {/* Header */}
+            <View className="flex-row items-center px-4 py-3 bg-backgroundDark border-b border-gray-700">
+                <TouchableOpacity onPress={() => router.back()} className="mr-4">
+                    <Text className="text-primary text-base">← Voltar</Text>
                 </TouchableOpacity>
-                <Text style={styles.title}>
+                <Text className="text-white text-lg font-semibold flex-1">
                     {event?.name ? `Buscar Ingressos: ${event.name}` : 'Buscar Ingressos'}
                 </Text>
             </View>
 
-            <View style={styles.searchContainer}>
-                <View style={styles.searchTypeContainer}>
+            {/* Search Container */}
+            <View className="p-4 bg-backgroundDark mb-2 border-b border-gray-700">
+                {/* Search Type Buttons */}
+                <View className="flex-row mb-3">
                     <TouchableOpacity
-                        style={[styles.searchTypeButton, searchType === 'email' && styles.searchTypeButtonActive]}
+                        className={`flex-1 py-2 items-center border-b-2 ${
+                            searchType === 'email' ? 'border-b-primary' : 'border-b-transparent'
+                        }`}
                         onPress={() => setSearchType('email')}
                     >
-                        <Text style={[styles.searchTypeText, searchType === 'email' && styles.searchTypeTextActive]}>Email</Text>
+                        <Text className={`text-base ${
+                            searchType === 'email' ? 'text-primary' : 'text-gray-400'
+                        }`}>
+                            Email
+                        </Text>
                     </TouchableOpacity>
 
                     <TouchableOpacity
-                        style={[styles.searchTypeButton, searchType === 'cpf' && styles.searchTypeButtonActive]}
+                        className={`flex-1 py-2 items-center border-b-2 ${
+                            searchType === 'cpf' ? 'border-b-primary' : 'border-b-transparent'
+                        }`}
                         onPress={() => setSearchType('cpf')}
                     >
-                        <Text style={[styles.searchTypeText, searchType === 'cpf' && styles.searchTypeTextActive]}>CPF</Text>
+                        <Text className={`text-base ${
+                            searchType === 'cpf' ? 'text-primary' : 'text-gray-400'
+                        }`}>
+                            CPF
+                        </Text>
                     </TouchableOpacity>
                 </View>
 
+                {/* Search Input */}
                 <TextInput
-                    style={styles.searchInput}
+                    className="bg-zinc-700 text-white rounded-lg px-4 py-3 text-base mb-3"
                     placeholder={searchType === 'email' ? 'Digite o email do comprador' : 'Digite o CPF do comprador'}
                     placeholderTextColor="#999"
                     value={searchValue}
@@ -245,34 +280,36 @@ export default function SearchTicketsScreen() {
                     autoCapitalize="none"
                 />
 
+                {/* Search Button */}
                 <TouchableOpacity
-                    style={styles.searchButton}
+                    className="bg-primary py-3 rounded-lg items-center"
                     onPress={handleSearch}
                     disabled={isSearching}
                 >
                     {isSearching ? (
                         <ActivityIndicator color="#FFFFFF" />
                     ) : (
-                        <Text style={styles.searchButtonText}>Buscar</Text>
+                        <Text className="text-white text-base font-bold">Buscar</Text>
                     )}
                 </TouchableOpacity>
             </View>
 
+            {/* Results List */}
             <FlatList
                 data={getTicketsWithDetails || []}
                 renderItem={renderTicketItem}
                 keyExtractor={(item) => item._id}
-                contentContainerStyle={styles.resultsList}
+                className="px-4"
                 ListEmptyComponent={() => (
                     !isSearching && searchValue.trim().length > 0 ? (
-                        <View style={styles.emptyContainer}>
-                            <Text style={styles.emptyText}>Nenhum resultado encontrado</Text>
-                            <Text style={styles.emptySubtext}>Tente outro email ou CPF</Text>
+                        <View className="items-center justify-center py-8">
+                            <Text className="text-white text-base font-bold mb-2">Nenhum resultado encontrado</Text>
+                            <Text className="text-gray-300 text-sm">Tente outro email ou CPF</Text>
                         </View>
                     ) : !isSearching ? (
-                        <View style={styles.emptyContainer}>
-                            <Text style={styles.emptyText}>Busque por ingressos</Text>
-                            <Text style={styles.emptySubtext}>Digite um email ou CPF para buscar</Text>
+                        <View className="items-center justify-center py-8">
+                            <Text className="text-white text-base font-bold mb-2">Busque por ingressos</Text>
+                            <Text className="text-gray-300 text-sm">Digite um email ou CPF para buscar</Text>
                         </View>
                     ) : null
                 )}
@@ -280,206 +317,3 @@ export default function SearchTicketsScreen() {
         </SafeAreaView>
     );
 }
-
-const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        backgroundColor: '#232323', // bg-body
-    },
-    header: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingHorizontal: 16,
-        paddingVertical: 12,
-        backgroundColor: '#181818', // bg-card
-        borderBottomWidth: 1,
-        borderBottomColor: '#333',
-    },
-    backButton: {
-        marginRight: 16,
-    },
-    backButtonText: {
-        fontSize: 16,
-        color: '#E65CFF', // text-destaque
-    },
-    title: {
-        fontSize: 18,
-        fontWeight: '600',
-        color: '#FFFFFF',
-        flex: 1,
-    },
-    searchContainer: {
-        padding: 16,
-        backgroundColor: '#181818', // bg-card
-        marginBottom: 8,
-        borderBottomWidth: 1,
-        borderBottomColor: '#333',
-    },
-    searchTypeContainer: {
-        flexDirection: 'row',
-        marginBottom: 12,
-    },
-    searchTypeButton: {
-        flex: 1,
-        paddingVertical: 8,
-        alignItems: 'center',
-        borderBottomWidth: 2,
-        borderBottomColor: 'transparent',
-    },
-    searchTypeButtonActive: {
-        borderBottomColor: '#E65CFF', // text-destaque
-    },
-    searchTypeText: {
-        fontSize: 16,
-        color: '#999',
-    },
-    searchTypeTextActive: {
-        color: '#E65CFF', // text-destaque
-    },
-    searchInput: {
-        backgroundColor: '#333',
-        color: '#FFFFFF',
-        borderRadius: 8,
-        paddingHorizontal: 16,
-        paddingVertical: 12,
-        fontSize: 16,
-        marginBottom: 12,
-    },
-    searchButton: {
-        backgroundColor: '#E65CFF', // bg-destaque
-        paddingVertical: 12,
-        borderRadius: 8,
-        alignItems: 'center',
-    },
-    searchButtonText: {
-        fontSize: 16,
-        fontWeight: 'bold',
-        color: '#FFFFFF',
-    },
-    resultsList: {
-        padding: 16,
-    },
-    ticketItem: {
-        backgroundColor: '#181818', // bg-card
-        borderRadius: 8,
-        padding: 16,
-        marginBottom: 12,
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 4,
-        elevation: 2,
-    },
-    usedTicket: {
-        borderLeftWidth: 4,
-        borderLeftColor: '#FFB800', // amarelo
-    },
-    invalidTicket: {
-        borderLeftWidth: 4,
-        borderLeftColor: '#FF4D4D', // vermelho
-    },
-    ticketInfo: {
-        flex: 1,
-    },
-    ticketName: {
-        fontSize: 16,
-        fontWeight: 'bold',
-        color: '#FFFFFF',
-        marginBottom: 4,
-    },
-    ticketDetail: {
-        fontSize: 14,
-        color: '#CCCCCC',
-        marginBottom: 2,
-    },
-    ticketStatus: {
-        fontSize: 14,
-        fontWeight: 'bold',
-        marginTop: 4,
-        color: '#FFFFFF',
-    },
-    statusDot: {
-        fontSize: 12,
-        marginRight: 6,
-    },
-    validDot: {
-        color: '#4CAF50', // verde
-    },
-    usedDot: {
-        color: '#FFB800', // amarelo
-    },
-    invalidDot: {
-        color: '#FF4D4D', // vermelho
-    },
-    validateButton: {
-        backgroundColor: '#E65CFF', // bg-destaque
-        paddingHorizontal: 16,
-        paddingVertical: 8,
-        borderRadius: 8,
-    },
-    validateButtonText: {
-        fontSize: 14,
-        fontWeight: 'bold',
-        color: '#FFFFFF',
-    },
-    emptyContainer: {
-        alignItems: 'center',
-        justifyContent: 'center',
-        paddingVertical: 32,
-    },
-    emptyText: {
-        fontSize: 16,
-        fontWeight: 'bold',
-        color: '#FFFFFF',
-        marginBottom: 8,
-    },
-    emptySubtext: {
-        fontSize: 14,
-        color: '#CCCCCC',
-    },
-    // Estilos para o alerta personalizado
-    alertContainer: {
-        position: 'absolute',
-        top: 60,
-        left: 16,
-        right: 16,
-        zIndex: 1000,
-        flexDirection: 'row',
-        alignItems: 'center',
-        padding: 16,
-        borderRadius: 8,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.25,
-        shadowRadius: 3.84,
-        elevation: 5,
-    },
-    alertIcon: {
-        fontSize: 24,
-        marginRight: 12,
-    },
-    alertContent: {
-        flex: 1,
-    },
-    alertTitle: {
-        color: '#FFFFFF',
-        fontWeight: 'bold',
-        fontSize: 16,
-        marginBottom: 4,
-    },
-    alertMessage: {
-        color: '#FFFFFF',
-        fontSize: 14,
-    },
-    alertCloseButton: {
-        padding: 4,
-    },
-    alertCloseText: {
-        color: '#FFFFFF',
-        fontSize: 20,
-        fontWeight: 'bold',
-    },
-});

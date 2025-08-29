@@ -20,6 +20,12 @@
     }
   },
   "submit": {
-    "production": {}
+    "production": {
+      "ios": {
+        "appleId": "vitorroverso@icloud.com",
+        "ascAppId": "6751670590",
+        "appleTeamId": "RNPF9SS7ZW"
+      }
+    }
   }
 }

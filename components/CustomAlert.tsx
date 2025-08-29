@@ -118,7 +118,6 @@ const CustomAlert: React.FC<CustomAlertProps> = ({
               <Text className="text-gray-300 text-base font-bold">{tipoLabel}:</Text>
               <Text className="text-primary text-lg font-bold ml-1">{tipoValue.trim()}</Text>
             </View>
-            <Text className="text-gray-300 text-base mt-1">{qtdPart}</Text>
           </View>
         );
       } else {

@@ -210,7 +210,7 @@ export default function EventsScreen() {
   }
 
   return (
-    <SafeAreaView className="flex-1 bg-background">
+    <View className="flex-1 bg-background pt-20">
       {/* Header */}
       <View className="px-6 pt-6 pb-4">
         <Text className="text-white text-2xl font-bold mb-1">Eventos</Text>
@@ -241,6 +241,6 @@ export default function EventsScreen() {
         }}
         showsVerticalScrollIndicator={false}
       />
-    </SafeAreaView>
+    </View>
   );
 }

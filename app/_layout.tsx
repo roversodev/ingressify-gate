@@ -9,6 +9,7 @@ import { useEffect, useState } from 'react';
 import 'react-native-reanimated';
 import "./globals.css";
 
+
 import { api } from '@/api';
 import SplashScreenComponent from '@/components/SplashScreen';
 import { useColorScheme } from '@/hooks/useColorScheme';

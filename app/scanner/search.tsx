@@ -111,45 +111,78 @@ export default function SearchTicketsScreen() {
                 eventId: eventId as Id<"events">,
                 userId: user?.id ?? ''
             });
-
-            if (result.success) {
+    
+            // Sempre verificar o resultado estruturado
+            if (result && result.success) {
                 showAlert(
                     'success',
                     'Ingresso Válido',
                     `Tipo: ${result.ticketType?.name || 'N/A'} | Qtd: ${result.ticket?.quantity || 1}`
                 );
-                
-                // Atualizar a lista após validação bem-sucedida
-                // Não é necessário chamar handleSearch() novamente, pois o useQuery já atualiza automaticamente
             } else {
                 let alertTitle = 'Ingresso Inválido';
                 let alertMessage = 'Este ingresso não é válido para este evento.';
                 let alertType = 'error';
-
-                // Personalizar mensagens baseadas no tipo de erro
-                if (result.ticket.status === 'used') {
-                    alertTitle = 'Ingresso Já Utilizado';
-                    alertMessage = 'Este ingresso já foi utilizado anteriormente.';
-                    alertType = 'warning';
-                } else if (result.ticket.status === 'refunded') {
-                    alertTitle = 'Ingresso Reembolsado';
-                    alertMessage = 'Este ingresso foi reembolsado e não é mais válido.';
-                } else if (result.ticket.status === 'cancelled') {
-                    alertTitle = 'Ingresso Cancelado';
-                    alertMessage = 'Este ingresso foi cancelado.';
-                } else if (!result.success && result.event._id !== eventId) {
-                    alertTitle = 'Evento Incorreto';
-                    alertMessage = 'Este ingresso não pertence a este evento.';
+    
+                // Usar o resultado estruturado
+                if (result && result.ticket) {
+                    switch (result.ticket.status) {
+                        case 'used':
+                            alertTitle = 'Ingresso Já Utilizado';
+                            alertMessage = 'Este ingresso já foi utilizado anteriormente.';
+                            alertType = 'warning';
+                            break;
+                        case 'refunded':
+                            alertTitle = 'Ingresso Reembolsado';
+                            alertMessage = 'Este ingresso foi reembolsado e não é mais válido.';
+                            break;
+                        case 'cancelled':
+                            alertTitle = 'Ingresso Cancelado';
+                            alertMessage = 'Este ingresso foi cancelado.';
+                            break;
+                        default:
+                            if (result.event && result.event._id !== eventId) {
+                                alertTitle = 'Evento Incorreto';
+                                alertMessage = 'Este ingresso não pertence a este evento.';
+                            }
+                            break;
+                    }
+                } else if (result && result.errorType) {
+                    switch (result.errorType) {
+                        case 'TICKET_NOT_FOUND':
+                            alertTitle = 'Ingresso Não Encontrado';
+                            alertMessage = 'Este ingresso não foi encontrado no sistema.';
+                            break;
+                        case 'EVENT_MISMATCH':
+                            alertTitle = 'Evento Incorreto';
+                            alertMessage = 'Este ingresso não pertence a este evento.';
+                            break;
+                        case 'ALREADY_USED':
+                            alertTitle = 'Ingresso Já Utilizado';
+                            alertMessage = 'Este ingresso já foi utilizado anteriormente.';
+                            alertType = 'warning';
+                            break;
+                        case 'INVALID_STATUS':
+                            alertTitle = 'Status Inválido';
+                            alertMessage = 'Este ingresso não pode ser validado devido ao seu status atual.';
+                            break;
+                        default:
+                            alertTitle = 'Erro de Validação';
+                            alertMessage = result.message || 'Não foi possível validar o ingresso.';
+                            break;
+                    }
                 }
-
+    
                 showAlert(alertType as 'error' | 'warning', alertTitle, alertMessage);
             }
         } catch (error: any) {
             console.error('Erro ao validar ingresso:', error);
+            
+            // Fallback simples para erros de rede/servidor
             showAlert(
                 'error',
                 'Erro de Conexão',
-                'Não foi possível validar o ingresso. Verifique sua conexão e tente novamente.'
+                'Não foi possível conectar ao servidor. Verifique sua conexão com a internet e tente novamente.'
             );
         }
     };

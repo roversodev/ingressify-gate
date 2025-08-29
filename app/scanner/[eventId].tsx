@@ -147,8 +147,9 @@ export default function ScannerScreen() {
         eventId: eventId as Id<"events">,
         userId: user?.id ?? ''
       });
-
-      if (result.success) {
+  
+      // Sempre verificar o resultado estruturado, não depender de exceções
+      if (result && result.success) {
         showAlert(
           'success',
           'Ingresso Válido',
@@ -165,26 +166,62 @@ export default function ScannerScreen() {
           ]
         );
       } else {
+        // Tratar casos de insucesso baseado no resultado estruturado
         let alertTitle = 'Ingresso Inválido';
         let alertMessage = 'Este ingresso não é válido para este evento.';
         let alertType = 'error';
-
-        // Personalizar mensagens baseadas no tipo de erro
-        if (result.ticket.status === 'used') {
-          alertTitle = 'Ingresso Já Utilizado';
-          alertMessage = 'Este ingresso já foi utilizado anteriormente.';
-          alertType = 'warning';
-        } else if (result.ticket.status === 'refunded') {
-          alertTitle = 'Ingresso Reembolsado';
-          alertMessage = 'Este ingresso foi reembolsado e não é mais válido.';
-        } else if (result.ticket.status === 'cancelled') {
-          alertTitle = 'Ingresso Cancelado';
-          alertMessage = 'Este ingresso foi cancelado.';
-        } else if (!result.success && result.event._id !== eventId) {
-          alertTitle = 'Evento Incorreto';
-          alertMessage = 'Este ingresso não pertence a este evento.';
+  
+        // Usar o resultado estruturado em vez de mensagens de erro
+        if (result && result.ticket) {
+          switch (result.ticket.status) {
+            case 'used':
+              alertTitle = 'Ingresso Já Utilizado';
+              alertMessage = 'Este ingresso já foi utilizado anteriormente.';
+              alertType = 'warning';
+              break;
+            case 'refunded':
+              alertTitle = 'Ingresso Reembolsado';
+              alertMessage = 'Este ingresso foi reembolsado e não é mais válido.';
+              break;
+            case 'cancelled':
+              alertTitle = 'Ingresso Cancelado';
+              alertMessage = 'Este ingresso foi cancelado.';
+              break;
+            default:
+              // Verificar se é evento incorreto
+              if (result.event && result.event._id !== eventId) {
+                alertTitle = 'Evento Incorreto';
+                alertMessage = 'Este ingresso não pertence a este evento.';
+              }
+              break;
+          }
+        } else if (result && result.errorType) {
+          // Usar errorType se disponível
+          switch (result.errorType) {
+            case 'TICKET_NOT_FOUND':
+              alertTitle = 'Ingresso Não Encontrado';
+              alertMessage = 'Este ingresso não foi encontrado no sistema.';
+              break;
+            case 'EVENT_MISMATCH':
+              alertTitle = 'Evento Incorreto';
+              alertMessage = 'Este ingresso não pertence a este evento.';
+              break;
+            case 'ALREADY_USED':
+              alertTitle = 'Ingresso Já Utilizado';
+              alertMessage = 'Este ingresso já foi utilizado anteriormente.';
+              alertType = 'warning';
+              break;
+            case 'INVALID_STATUS':
+              alertTitle = 'Status Inválido';
+              alertMessage = 'Este ingresso não pode ser validado devido ao seu status atual.';
+              break;
+            default:
+              alertTitle = 'Erro de Validação';
+              alertMessage = result.message || 'Não foi possível validar o ingresso.';
+              break;
+          }
         }
-
+  
         showAlert(
           alertType as 'success' | 'warning' | 'error' | 'info',
           alertTitle,
@@ -201,13 +238,13 @@ export default function ScannerScreen() {
       }
     } catch (error: any) {
       console.error('Erro ao validar ingresso:', error);
-
-      // Extrair a mensagem de erro específica do Convex
-      let errorMessage = 'Não foi possível validar o ingresso. Verifique sua conexão e tente novamente.';
-      let errorTitle = 'Erro de Conexão';
+  
+      // Tratamento simplificado para server errors
+      let errorMessage = 'Oops! Algo deu errado. Tente novamente em alguns segundos.';
+      let errorTitle = 'Erro Temporário';
       
-      if (error?.message) {
-        // Se o erro contém uma mensagem específica do servidor
+      // Se não for um server error genérico, tentar extrair informações específicas
+      if (error?.message && !error.message.includes('server error')) {
         if (error.message.includes('Este ingresso não pertence a este evento')) {
           errorTitle = 'Evento Incorreto';
           errorMessage = 'Este ingresso não pertence a este evento.';
@@ -221,12 +258,11 @@ export default function ScannerScreen() {
           errorTitle = 'Ingresso Cancelado';
           errorMessage = 'Este ingresso foi cancelado.';
         } else {
-          // Para outros erros específicos, usar a mensagem do erro
-          errorMessage = error.message;
+          errorMessage = 'Não foi possível validar o ingresso. Verifique se o ingresso está válido e tente novamente.';
           errorTitle = 'Erro de Validação';
         }
       }
-
+  
       showAlert(
         'error',
         errorTitle,

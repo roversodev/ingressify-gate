@@ -1,9 +1,9 @@
+import { HapticTab } from '@/components/HapticTab';
 import { IconSymbol } from '@/components/ui/IconSymbol';
 import { useOAuth, useSignIn } from '@clerk/clerk-expo';
 import { makeRedirectUri } from 'expo-auth-session';
-import { useRouter } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -18,27 +18,49 @@ import {
   View,
 } from 'react-native';
 
+export const useWarmUpBrowser = () => {
+  useEffect(() => {
+    if (Platform.OS === 'web') return
+    void WebBrowser.warmUpAsync()
+    return () => {
+      void WebBrowser.coolDownAsync()
+    }
+  }, [])
+}
 // Configuração necessária para o WebBrowser
 WebBrowser.maybeCompleteAuthSession();
 
 export default function SignInScreen() {
+  useWarmUpBrowser()
   const { startOAuthFlow } = useOAuth({ strategy: 'oauth_google' });
   const { signIn, setActive } = useSignIn();
-  const router = useRouter();
+  // REMOVER: const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  // Apple: estado/strategy/availability
+  const { startOAuthFlow: startAppleOAuth } = useOAuth({ strategy: 'oauth_apple' });
+  const [isAppleLoading, setIsAppleLoading] = useState(false);
+  const [isAppleAvailable, setIsAppleAvailable] = useState(false);
 
+  useEffect(() => {
+    if (Platform.OS === 'ios') {
+      // Verifica suporte ao botão nativo no dispositivo
+      // Ignorado em outras plataformas
+      import('expo-apple-authentication').then(mod => {
+        mod.isAvailableAsync().then(setIsAppleAvailable).catch(() => setIsAppleAvailable(false));
+      });
+    }
+  }, []);
   const onPressGoogleSignIn = React.useCallback(async () => {
     try {
       setIsGoogleLoading(true);
-      
       // Para debug: vamos capturar a URL que está sendo usada
       const redirectUrl = makeRedirectUri({
         scheme: 'ingressify-gate',
-        path: '/oauth-callback',
+        path: 'oauth-callback',
       });
       
       console.log('🔍 DEBUG - URL de redirecionamento:', redirectUrl);
@@ -49,14 +71,14 @@ export default function SignInScreen() {
   
       if (createdSessionId) {
         await setActive!({ session: createdSessionId });
-        router.replace('/(tabs)');
+        // Não navegar manualmente; layout raiz redireciona
       } else {
         if (signIn?.status === 'complete') {
           await setActive!({ session: signIn.createdSessionId });
-          router.replace('/(tabs)');
+          // Não navegar manualmente
         } else if (signUp?.status === 'complete') {
           await setActive!({ session: signUp.createdSessionId });
-          router.replace('/(tabs)');
+          // Não navegar manualmente
         } else {
           Alert.alert('Atenção', 'Verificação adicional necessária. Tente novamente.');
         }
@@ -88,8 +110,44 @@ export default function SignInScreen() {
     } finally {
       setIsGoogleLoading(false);
     }
-  }, [startOAuthFlow, setActive, router]);
+  }, [startOAuthFlow, setActive /*, router removido */]);
 
+  // Apple Sign In (Clerk)
+  const onPressAppleSignIn = React.useCallback(async () => {
+    try {
+      setIsAppleLoading(true);
+      const redirectUrl = makeRedirectUri({
+        scheme: 'ingressify-gate',
+        path: 'oauth-callback',
+      });
+
+      const { createdSessionId, signIn, signUp, setActive } = await startAppleOAuth({
+        redirectUrl,
+      });
+
+      if (createdSessionId) {
+        await setActive!({ session: createdSessionId });
+        // Não navegar manualmente
+      } else if (signIn?.status === 'complete') {
+        await setActive!({ session: signIn.createdSessionId });
+        // Não navegar manualmente
+      } else if (signUp?.status === 'complete') {
+        await setActive!({ session: signUp.createdSessionId });
+        // Não navegar manualmente
+      } else {
+        Alert.alert('Atenção', 'Verificação adicional necessária. Tente novamente.');
+      }
+    } catch (err: any) {
+      let errorMessage = 'Falha ao entrar com Apple.';
+      if (err?.errors?.[0]?.message) errorMessage = err.errors[0].message;
+
+      const currentRedirectUrl = makeRedirectUri({ scheme: 'ingressify-gate', path: '/oauth-callback' });
+      Alert.alert('Erro OAuth', `${errorMessage}\n\n🔍 URL: ${currentRedirectUrl}`);
+      console.log('🚨 ERRO OAUTH APPLE:', JSON.stringify(err, null, 2));
+    } finally {
+      setIsAppleLoading(false);
+    }
+  }, [startAppleOAuth]);
   const onPressEmailSignIn = async () => {
     if (!email || !password) {
       Alert.alert('Erro', 'Por favor, preencha todos os campos');
@@ -105,7 +163,7 @@ export default function SignInScreen() {
 
       if (result.status === 'complete') {
         await setActive!({ session: result.createdSessionId });
-        router.replace('/(tabs)');
+        // Não navegar manualmente
       } else {
         Alert.alert('Erro', 'Falha ao fazer login. Verifique suas credenciais.');
       }
@@ -185,7 +243,7 @@ export default function SignInScreen() {
                     returnKeyType="done"
                     onSubmitEditing={onPressEmailSignIn}
                   />
-                  <TouchableOpacity 
+                  <HapticTab 
                     onPress={() => setShowPassword(!showPassword)}
                     className="p-1"
                   >
@@ -194,12 +252,12 @@ export default function SignInScreen() {
                       size={20} 
                       color="#6B7280" 
                     />
-                  </TouchableOpacity>
+                  </HapticTab>
                 </View>
               </View>
 
               {/* Botão de Login com Email */}
-              <TouchableOpacity 
+              <HapticTab 
                 className={`bg-primary py-4 rounded-xl shadow-lg active:bg-primary/90 ${
                   isLoading ? 'opacity-50' : ''
                 }`}
@@ -214,7 +272,7 @@ export default function SignInScreen() {
                     {isLoading ? 'Entrando...' : 'Entrar com Email'}
                   </Text>
                 </View>
-              </TouchableOpacity>
+              </HapticTab>
             </View>
 
             {/* Divisor */}
@@ -224,9 +282,31 @@ export default function SignInScreen() {
               <View className="flex-1 h-px bg-gray-600" />
             </View>
 
+            {/* Botão Sign in with Apple (iOS) */}
+            {Platform.OS === 'ios' && isAppleAvailable && (
+              <View className="mb-4">
+                {/* Botão nativo da Apple (mantém as guidelines visuais) */}
+                <View style={{ opacity: isAppleLoading ? 0.6 : 1 }}>
+                  {/* @ts-ignore: módulo dinâmico já carregado no useEffect */}
+                  {React.createElement(
+                    // cria o botão dinamicamente para evitar import estático em outras plataformas
+                    require('expo-apple-authentication').AppleAuthenticationButton,
+                    {
+                      buttonType: require('expo-apple-authentication').AppleAuthenticationButtonType.SIGN_IN,
+                      buttonStyle: require('expo-apple-authentication').AppleAuthenticationButtonStyle.BLACK,
+                      cornerRadius: 10,
+                      style: { width: '100%', height: 44 },
+                      onPress: onPressAppleSignIn,
+                      disabled: isAppleLoading,
+                    }
+                  )}
+                </View>
+              </View>
+            )}
+
             {/* Botão do Google */}
             <View className="mb-6">
-              <TouchableOpacity 
+              <HapticTab 
                 className={`bg-backgroundCard border border-gray-600 py-4 rounded-xl shadow-sm active:bg-gray-700 ${
                   isGoogleLoading ? 'opacity-50' : ''
                 }`}
@@ -245,7 +325,7 @@ export default function SignInScreen() {
                     {isGoogleLoading ? 'Conectando...' : 'Continuar com Google'}
                   </Text>
                 </View>
-              </TouchableOpacity>
+              </HapticTab>
             </View>
 
             {/* Link de Cadastro */}

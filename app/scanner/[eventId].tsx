@@ -10,12 +10,14 @@ import {
   StyleSheet,
   Text,
   TouchableOpacity,
-  View
+  View,
+  useWindowDimensions
 } from 'react-native';
 
 // Importe o componente CustomAlert
 import CustomAlert from '@/components/CustomAlert';
 import { IconSymbol } from '@/components/ui/IconSymbol.ios';
+import { useIsFocused } from '@react-navigation/native';
 
 export default function ScannerScreen() {
   const { eventId } = useLocalSearchParams<{ eventId: string }>();
@@ -43,12 +45,51 @@ export default function ScannerScreen() {
     actions: []
   });
 
-  const event = useQuery(api.events.getById, { eventId: eventId as Id<"events"> });
+  const isFocused = useIsFocused();
+
+  const { width, height } = useWindowDimensions();
+  const isLandscape = width > height;
+  const isTablet = Math.min(width, height) >= 768;
+  const minSide = Math.min(width, height);
+
+  // Tamanho do quadrado de leitura proporcional ao menor lado da tela
+  const scanSize = isTablet
+    ? Math.round(Math.min(minSide * 0.6, 420))
+    : Math.round(Math.min(Math.max(minSide * 0.55, 220), 320));
+
+  // Tamanhos de fontes e espaçamentos em iPad
+  const headerTitleFont = isTablet ? 22 : 18;
+  const backFont = isTablet ? 18 : 16;
+  const availabilityFont = isTablet ? 16 : 12;
+  const scanTextFont = isTablet ? (isLandscape ? 14 : 18) : 16;
+  const bottomOffset = isTablet ? (isLandscape ? 24 : 80) : (isLandscape ? 24 : 50);
+
+  const searchButtonStyle = React.useMemo(
+    () => ({
+      paddingHorizontal: isTablet ? 28 : 20,
+      paddingVertical: isTablet ? 14 : 10,
+      borderRadius: isTablet ? 12 : 8,
+    }),
+    [isTablet]
+  );
+  const buttonTextFont = isTablet ? 18 : 16;
+
+  // NOVO: Normaliza o eventId e evita queries com param inválido
+  const safeEventId = React.useMemo(() => {
+    if (Array.isArray(eventId)) return eventId[0];
+    return typeof eventId === 'string' && eventId.length > 0 ? eventId : undefined;
+  }, [eventId]);
+
+  // Ajuste: só dispara as queries quando safeEventId existir
+  const event = useQuery(
+    api.events.getById,
+    safeEventId ? { eventId: safeEventId as Id<"events"> } : "skip"
+  );
   const validateTicket = useMutation(api.tickets.validateTicket);
-  // Mova esta consulta para cá
-  const availability = useQuery(api.events.getEventAvailability, {
-    eventId: eventId as Id<"events">,
-  });
+  const availability = useQuery(
+    api.events.getEventAvailability,
+    safeEventId ? { eventId: safeEventId as Id<"events"> } : "skip"
+  );
 
   useEffect(() => {
     if (!permission) {
@@ -91,6 +132,20 @@ export default function ScannerScreen() {
     );
   }
 
+  // NOVO: Se o eventId não chegou, mostra um fallback seguro
+  if (!safeEventId) {
+    return (
+      <SafeAreaView className="flex-1 justify-center items-center bg-background">
+        <Text className="text-white text-base mb-4">
+          Não foi possível identificar o evento. Volte e tente novamente.
+        </Text>
+        <TouchableOpacity onPress={() => router.back()} style={styles.button}>
+          <Text style={styles.textButton}>Voltar</Text>
+        </TouchableOpacity>
+      </SafeAreaView>
+    );
+  }
+
   const handleBarcodeScanned = async ({ type, data }: { type: string; data: string }) => {
     // Verificar se já está processando ou se é o mesmo QR code recente
     const now = Date.now();
@@ -105,6 +160,23 @@ export default function ScannerScreen() {
       return;
     }
 
+    // NOVO: Garantia extra de que o eventId está válido antes de continuar
+    if (!safeEventId) {
+      showAlert(
+        'error',
+        'Evento inválido',
+        'Não foi possível identificar o evento. Volte e tente novamente.',
+        [{
+          text: 'OK',
+          onPress: () => {
+            setScanned(false);
+            setIsValidating(false);
+            lastScannedRef.current = '';
+          }
+        }]
+      );
+      return;
+    }
 
     // Atualizar referências
     lastScannedRef.current = data;
@@ -144,10 +216,10 @@ export default function ScannerScreen() {
       // Chamar a função de validação no Convex
       const result = await validateTicket({
         ticketId: ticketData.ticketId,
-        eventId: eventId as Id<"events">,
+        eventId: safeEventId as Id<"events">,
         userId: user?.id ?? ''
       });
-  
+
       // Sempre verificar o resultado estruturado, não depender de exceções
       if (result && result.success) {
         showAlert(
@@ -296,14 +368,14 @@ export default function ScannerScreen() {
 
       <View className='bg-background flex-row items-center py-4 px-3'>
         <TouchableOpacity onPress={() => router.back()} className='mr-4'>
-          <Text className='text-primary text-[16px]'>← Voltar</Text>
+          <Text className='text-primary text-[16px]' style={{ fontSize: backFont }}>← Voltar</Text>
         </TouchableOpacity>
-        <Text className='text-white text-[18px] font-semibold flex-1'>
+        <Text className='text-white text-[18px] font-semibold flex-1' style={{ fontSize: headerTitleFont }}>
           {event?.name ? `${event.name}` : 'Scanner QR Code'}
         </Text>
         {event && availability && (
           <View className="bg-backgroundCard px-3 py-1 rounded-full mr-2">
-            <Text className="text-primary text-sm font-bold">
+            <Text className="text-primary text-sm font-bold" style={{ fontSize: availabilityFont }}>
               {availability.validatedTickets}/{availability.purchasedTickets}
             </Text>
           </View>
@@ -324,32 +396,39 @@ export default function ScannerScreen() {
         </TouchableOpacity>
       </View>
 
-      <CameraView
-        style={styles.camera}
-        facing={facing}
-        onBarcodeScanned={scanned ? undefined : handleBarcodeScanned}
-        barcodeScannerSettings={{
-          barcodeTypes: ['qr', 'pdf417'],
-        }}
-      >
+      {/* Container relativo para sobrepor UI por cima da câmera */}
+      <View style={styles.cameraContainer}>
+        {/* NOVO: só renderiza a câmera quando a tela está focada */}
+        {isFocused && (
+          <CameraView
+            style={StyleSheet.absoluteFillObject}
+            facing={facing}
+            onBarcodeScanned={scanned ? undefined : handleBarcodeScanned}
+            barcodeScannerSettings={{
+              barcodeTypes: ['qr'], // reduzimos para estabilizar; depois podemos reativar 'pdf417'
+            }}
+          />
+        )}
+
+        {/* Overlay */}
         <View style={styles.overlay}>
-          <View style={styles.scanArea}>
-            <Text style={styles.scanText}>
+          <View style={[styles.scanArea, { width: scanSize, height: scanSize }]}>
+            <Text style={[styles.scanText, { fontSize: scanTextFont }]}>
               {isValidating ? 'Validando ingresso...' : 'Posicione o QR code dentro da área'}
             </Text>
           </View>
         </View>
 
-        <View style={styles.buttonContainer}>
-
+        {/* Controles */}
+        <View style={[styles.buttonContainer, { bottom: bottomOffset }]}>
           <TouchableOpacity
-            style={[styles.searchButton, { marginTop: 12 }]}
-            onPress={() => router.push(`/scanner/search?eventId=${eventId}`)}
+            style={[styles.searchButton, { marginTop: 12 }, searchButtonStyle]}
+            onPress={() => router.push(`/scanner/search?eventId=${safeEventId}`)}
           >
-            <Text style={styles.flipButtonText}>Buscar por Email/CPF</Text>
+            <Text style={[styles.flipButtonText, { fontSize: buttonTextFont }]}>Buscar por Email/CPF</Text>
           </TouchableOpacity>
         </View>
-      </CameraView>
+      </View>
     </SafeAreaView>
   );
 }
@@ -387,8 +466,19 @@ const styles = StyleSheet.create({
   camera: {
     flex: 1,
   },
-  overlay: {
+  // NOVO: container relativo da câmera para permitir overlay absoluto
+  cameraContainer: {
     flex: 1,
+    position: 'relative',
+    backgroundColor: '#000',
+  },
+  // Ajustado: overlay absoluto sobre a câmera
+  overlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
     backgroundColor: 'transparent',
     justifyContent: 'center',
     alignItems: 'center',

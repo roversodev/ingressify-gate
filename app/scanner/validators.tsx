@@ -15,6 +15,7 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from 'react-native';
 
@@ -159,11 +160,27 @@ export default function ValidatorsScreen() {
     );
   };
 
+  // Responsividade para iPad/orientação
+  const { width, height } = useWindowDimensions();
+  const isLandscape = width > height;
+  const isTablet = Math.min(width, height) >= 768;
+  const maxContentWidth = isTablet ? (isLandscape ? 900 : 720) : undefined;
+  const spacing = isTablet ? (isLandscape ? 20 : 24) : 16;
+
+  const headerFont = isTablet ? (isLandscape ? 20 : 22) : 18;
+  const sectionTitleFont = isTablet ? (isLandscape ? 16 : 18) : 14;
+  const inputFont = isTablet ? (isLandscape ? 16 : 18) : 14;
+  const buttonFont = isTablet ? (isLandscape ? 16 : 18) : 14;
+  const cardPadding = isTablet ? (isLandscape ? 18 : 20) : 16;
+  const listItemPadding = isTablet ? (isLandscape ? 14 : 16) : 12;
+  const headerIconSize = isTablet ? (isLandscape ? 24 : 26) : 24;
+  const iconSize = isTablet ? (isLandscape ? 18 : 20) : 16;
+
   if (!event || validators === undefined) {
     return (
       <SafeAreaView className="flex-1 justify-center items-center bg-background">
         <ActivityIndicator size="large" color="#E65CFF" />
-        <Text className="text-white mt-4 text-base font-medium">Carregando...</Text>
+        <Text className="text-white mt-4 font-medium" style={{ fontSize: sectionTitleFont }}>Carregando...</Text>
       </SafeAreaView>
     );
   }
@@ -175,69 +192,90 @@ export default function ValidatorsScreen() {
     >
       <SafeAreaView className="flex-1">
         {/* Header */}
-        <View className="flex-row items-center px-4 py-3 border-b border-backgroundCard">
+        <View
+          className="flex-row items-center border-b border-backgroundCard"
+          style={{ paddingHorizontal: spacing, paddingVertical: isTablet ? 14 : 12, alignSelf: 'center', width: '100%', maxWidth: maxContentWidth }}
+        >
           <TouchableOpacity 
             className="p-2 -ml-2" 
             onPress={() => router.back()}
+            hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
           >
-            <IconSymbol name="arrow.left" size={24} color="#E65CFF" />
+            <IconSymbol name="arrow.left" size={headerIconSize} color="#E65CFF" />
           </TouchableOpacity>
-          <Text className="text-white text-lg font-bold ml-2 flex-1" numberOfLines={1}>
+          <Text className="text-white font-bold ml-2 flex-1" numberOfLines={1} style={{ fontSize: headerFont }}>
             Validadores - {event.name}
           </Text>
         </View>
 
         {/* Formulário para convidar validadores */}
-        <View className="mx-4 mt-6 p-5 bg-backgroundCard rounded-xl shadow-lg">
+        <View
+          className="mx-4 mt-6 bg-backgroundCard rounded-xl shadow-lg"
+          style={{ alignSelf: 'center', width: '100%', maxWidth: maxContentWidth, padding: cardPadding }}
+        >
           <View className="flex-row items-center mb-4">
-            <IconSymbol name="person.badge.plus" size={20} color="#E65CFF" />
-            <Text className="text-white text-base font-semibold ml-2">
+            <IconSymbol name="person.badge.plus" size={iconSize} color="#E65CFF" />
+            <Text className="text-white font-semibold ml-2" style={{ fontSize: sectionTitleFont }}>
               Convidar Validador
             </Text>
           </View>
           
           <View className="flex-row items-center gap-3">
             <TextInput
-              className="flex-1 bg-progressBar rounded-lg px-4 py-3.5 text-white text-base"
+              className="flex-1 bg-progressBar rounded-lg text-white"
               placeholder="Email do validador"
               placeholderTextColor="#A3A3A3"
               value={email}
               onChangeText={setEmail}
               keyboardType="email-address"
               autoCapitalize="none"
+              style={{
+                fontSize: inputFont,
+                paddingVertical: isTablet ? 14 : 12,
+                paddingHorizontal: 16,
+              }}
             />
             <TouchableOpacity 
-              className={`px-6 py-3.5 rounded-lg justify-center items-center min-w-[90px] ${
-                isInviting ? 'bg-primary/70' : 'bg-primary'
-              }`}
+              className={`${isInviting ? 'bg-primary/70' : 'bg-primary'} rounded-lg justify-center items-center`}
               onPress={handleInvite}
               disabled={isInviting}
+              style={{
+                paddingVertical: isTablet ? 14 : 12,
+                paddingHorizontal: isTablet ? 18 : 16,
+                minWidth: isTablet ? 110 : 90,
+              }}
             >
               {isInviting ? (
                 <ActivityIndicator size="small" color="#fff" />
               ) : (
-                <Text className="text-white font-semibold text-sm">Convidar</Text>
+                <Text className="text-white font-semibold" style={{ fontSize: buttonFont }}>Convidar</Text>
               )}
             </TouchableOpacity>
           </View>
         </View>
 
         {/* Lista de validadores */}
-        <View className="flex-1 px-4 mt-6">
+        <View
+          className="flex-1 mt-6"
+          style={{ alignSelf: 'center', width: '100%', maxWidth: maxContentWidth, paddingHorizontal: spacing }}
+        >
           <View className="flex-row items-center mb-4">
-            <IconSymbol name="person.2" size={20} color="#E65CFF" />
-            <Text className="text-white text-base font-semibold ml-2">
+            <IconSymbol name="person.2" size={iconSize} color="#E65CFF" />
+            <Text className="text-white font-semibold ml-2" style={{ fontSize: sectionTitleFont }}>
               Validadores ({validators.length})
             </Text>
           </View>
           
           {validators.length === 0 ? (
-            <View className="bg-backgroundCard rounded-xl p-8 items-center justify-center">
-              <IconSymbol name="person.2" size={48} color="#A3A3A3" />
-              <Text className="text-textSecondary text-base mt-3 font-medium">
+            <View
+              className="bg-backgroundCard rounded-xl items-center justify-center"
+              style={{ padding: isTablet ? 28 : 24 }}
+            >
+              <IconSymbol name="person.2" size={isTablet ? 56 : 48} color="#A3A3A3" />
+              <Text className="text-textSecondary mt-3 font-medium" style={{ fontSize: sectionTitleFont }}>
                 Nenhum validador convidado
               </Text>
-              <Text className="text-textSecondary text-sm mt-1 text-center">
+              <Text className="text-textSecondary mt-1 text-center" style={{ fontSize: isTablet ? 14 : 12 }}>
                 Convide validadores para ajudar na verificação dos ingressos
               </Text>
             </View>
@@ -246,11 +284,15 @@ export default function ValidatorsScreen() {
               data={validators}
               keyExtractor={(item) => item._id}
               showsVerticalScrollIndicator={false}
+              contentContainerStyle={{ paddingBottom: isTablet ? 24 : 16 }}
               renderItem={({ item }) => (
-                <View className="bg-backgroundCard rounded-xl p-4 mb-3 shadow-sm">
+                <View
+                  className="bg-backgroundCard rounded-xl mb-3 shadow-sm"
+                  style={{ padding: listItemPadding }}
+                >
                   <View className="flex-row items-center justify-between">
                     <View className="flex-1 mr-3">
-                      <Text className="text-white text-base font-medium mb-2">
+                      <Text className="text-white font-medium mb-2" style={{ fontSize: sectionTitleFont }}>
                         {item.email}
                       </Text>
                       {renderValidatorStatus(item.status)}
@@ -258,17 +300,21 @@ export default function ValidatorsScreen() {
                     <View className="flex-row items-center gap-2">
                       {item.status === "pending" && (
                         <TouchableOpacity 
-                          className="p-2.5 bg-primary/10 rounded-lg"
+                          className="bg-primary/10 rounded-lg"
                           onPress={() => handleCopyInviteLink(item.inviteToken)}
+                          style={{ padding: isTablet ? 10 : 8 }}
+                          hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
                         >
-                          <IconSymbol name="doc.on.doc" size={18} color="#E65CFF" />
+                          <IconSymbol name="doc.on.doc" size={iconSize} color="#E65CFF" />
                         </TouchableOpacity>
                       )}
                       <TouchableOpacity 
-                        className="p-2.5 bg-red-500/10 rounded-lg"
+                        className="bg-red-500/10 rounded-lg"
                         onPress={() => confirmRemoveValidator(item._id as Id<"ticketValidators">, item.email)}
+                        style={{ padding: isTablet ? 10 : 8 }}
+                        hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
                       >
-                        <IconSymbol name="trash" size={18} color="#EF4444" />
+                        <IconSymbol name="trash" size={iconSize} color="#EF4444" />
                       </TouchableOpacity>
                     </View>
                   </View>

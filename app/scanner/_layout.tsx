@@ -3,7 +3,13 @@ import React from 'react';
 
 export default function ScannerLayout() {
   return (
-    <Stack screenOptions={{ headerShown: false }}>
+    <Stack 
+      screenOptions={{ 
+        headerShown: false,
+        animation: 'slide_from_right',
+        gestureEnabled: true,
+      }}
+    >
       <Stack.Screen name="[eventId]" />
       <Stack.Screen name="search" />
       <Stack.Screen name="validators" />

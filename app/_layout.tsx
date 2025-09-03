@@ -2,7 +2,7 @@ import { ClerkProvider, useAuth } from '@clerk/clerk-expo';
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { ConvexProvider, ConvexReactClient, useQuery } from 'convex/react';
 import { useFonts } from 'expo-font';
-import { Stack, useRouter, useSegments } from 'expo-router';
+import { Redirect, Stack, useSegments } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
@@ -57,7 +57,7 @@ function useDataPreloader() {
     api.events.getSellerEvents,
     (isSignedIn && user?.id) ? { userId: user.id } : "skip"
   );
-  
+
   const validatorEvents = useQuery(
     api.validators.getEventsUserCanValidate,
     (isSignedIn && user?.id) ? { userId: user.id } : "skip"
@@ -77,7 +77,7 @@ function useDataPreloader() {
       // Verificar se pelo menos uma das queries foi executada
       const hasSellerData = sellerEvents !== undefined;
       const hasValidatorData = validatorEvents !== undefined;
-      
+
       if (hasSellerData && hasValidatorData) {
         setPreloadComplete(true);
       }
@@ -116,11 +116,11 @@ function useAppInitialization() {
 
         for (let i = 0; i < steps.length; i++) {
           if (!isMounted) return;
-          
+
           const step = steps[i];
-          
+
           setInitializationProgress(((i + 1) / steps.length) * 100);
-          
+
           // Na etapa de carregamento de eventos, aguardar o preload
           if (i === 2 && isSignedIn) {
             // Aguardar o preload dos eventos completar
@@ -156,37 +156,65 @@ function useAppInitialization() {
 function InitialLayout() {
   const { isLoaded, isSignedIn } = useAuth();
   const segments = useSegments();
-  const router = useRouter();
 
-  useEffect(() => {
-    if (!isLoaded) return;
+  // Aguarda Clerk carregar para evitar flicker
+  if (!isLoaded) return null;
 
-    const inTabsGroup = segments[0] === '(tabs)';
+  // NOVO: permitir (tabs) e 'scanner' quando autenticado
+  const seg0 = segments[0];
+  const isInSignedInArea = seg0 === '(tabs)' || seg0 === 'scanner';
 
-    if (isSignedIn && !inTabsGroup) {
-      router.replace('/(tabs)');
-    } else if (!isSignedIn) {
-      router.replace('/(auth)/sign-in');
-    }
-  }, [isSignedIn, isLoaded]);
+  // Redirecionos declarativos (sem usar router.*)
+  if (isSignedIn && !isInSignedInArea) {
+    return <Redirect href="/(tabs)" />;
+  }
+  if (!isSignedIn && isInSignedInArea) {
+    return <Redirect href="/(auth)/sign-in" />;
+  }
 
   return (
-    <Stack screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="(auth)" options={{ headerShown: false }} />
-      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-      <Stack.Screen name="+not-found" />
-    </Stack>
+      <Stack
+        screenOptions={{
+          headerShown: false}}
+      >
+        <Stack.Screen
+          name="(auth)"
+          options={{
+            headerShown: false,
+            animation: 'fade',
+            gestureEnabled: true,
+          }}
+        />
+        <Stack.Screen
+          name="(tabs)"
+          options={{
+            headerShown: false,
+            animation: 'fade',
+            gestureEnabled: true,
+          }}
+        />
+        {/* Mantemos o grupo scanner permitido quando logado */}
+        <Stack.Screen
+          name="scanner"
+          options={{
+            headerShown: false,
+          }}
+        />
+        <Stack.Screen name="+not-found" />
+      </Stack>
   );
 }
 
-// Componente principal que gerencia splash e app
+// Evitar reexibir Splash após logout (só no cold start)
+let hasBootCompleted = false;
+
 function AppContent() {
   const [splashFinished, setSplashFinished] = useState(false);
   const { isInitialized } = useAppInitialization();
   const colorScheme = useColorScheme();
 
-  // Mostrar splash até que AMBOS estejam prontos
-  const shouldShowSplash = !splashFinished || !isInitialized;
+  // Splash só no cold start
+  const shouldShowSplash = !hasBootCompleted && (!splashFinished || !isInitialized);
 
   if (shouldShowSplash) {
     return (
@@ -195,6 +223,7 @@ function AppContent() {
         onFinish={(isCancelled) => {
           if (!isCancelled) {
             setSplashFinished(true);
+            hasBootCompleted = true; // não exibir novamente
           }
         }}
       />

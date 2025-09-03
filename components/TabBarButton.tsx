@@ -1,7 +1,8 @@
 import { icon } from '@/constants/icon';
 import React, { useEffect } from 'react';
-import { Pressable, StyleSheet } from 'react-native';
+import { StyleSheet } from 'react-native';
 import Animated, { interpolate, useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
+import { HapticTab } from './HapticTab';
 
 interface TabBarButtonProps {
   onPress: () => void;
@@ -39,7 +40,7 @@ const TabBarButton: React.FC<TabBarButtonProps> = ({ onPress, onLongPress, isFoc
     const IconComponent = icon[routeName as keyof typeof icon];
 
     return (
-        <Pressable
+        <HapticTab
             onPress={onPress} 
             onLongPress={onLongPress} 
             style={styles.tabbarItem}
@@ -54,7 +55,7 @@ const TabBarButton: React.FC<TabBarButtonProps> = ({ onPress, onLongPress, isFoc
             }, animatedTextStyle]}>
                 {label}
             </Animated.Text>
-        </Pressable>
+        </HapticTab>
     );
 };
 

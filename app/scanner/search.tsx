@@ -13,7 +13,9 @@ import {
     Text,
     TextInput,
     TouchableOpacity,
-    View
+    View,
+    Platform,
+    useWindowDimensions
 } from 'react-native';
 
 export default function SearchTicketsScreen() {
@@ -24,6 +26,20 @@ export default function SearchTicketsScreen() {
     const [searchType, setSearchType] = useState<'email' | 'cpf'>('email');
     const [searchValue, setSearchValue] = useState('');
     const [isSearching, setIsSearching] = useState(false);
+    // Responsividade: detectar iPad/orientação e ajustar escalas de UI
+    const { width, height } = useWindowDimensions();
+    const isLandscape = width > height;
+    const isTablet = Math.min(width, height) >= 768;
+    const maxContentWidth = isTablet ? (isLandscape ? 900 : 720) : undefined;
+    const spacing = isTablet ? (isLandscape ? 20 : 24) : 16;
+
+    const listItemPadding = isTablet ? (isLandscape ? 16 : 20) : 12;
+    const titleFont = isTablet ? (isLandscape ? 18 : 20) : 16;       // Nome do usuário
+    const subFont = isTablet ? (isLandscape ? 14 : 16) : 12;         // Email/CPF/Tipo/Status
+    const headerFont = isTablet ? (isLandscape ? 20 : 22) : 18;      // Título do header
+    const buttonFont = isTablet ? (isLandscape ? 16 : 18) : 14;      // Texto do botão
+    const inputFont = isTablet ? (isLandscape ? 16 : 18) : 14;       // Texto do input
+    const statusDotSize = isTablet ? (isLandscape ? 12 : 14) : 10;
     
     // Estado para o alerta personalizado
     const [alert, setAlert] = useState({
@@ -205,32 +221,34 @@ export default function SearchTicketsScreen() {
                     shadowOpacity: 0.1,
                     shadowRadius: 4,
                     elevation: 2,
+                    padding: listItemPadding,
                 }}
             >
                 <View className="flex-1">
-                    <Text className="text-white text-base font-bold mb-1">
+                    <Text className="text-white font-bold mb-1" style={{ fontSize: titleFont }}>
                         {item.user?.name || 'Nome não disponível'}
                     </Text>
-                    <Text className="text-gray-300 text-sm mb-0.5">
+                    <Text className="text-gray-300 mb-0.5" style={{ fontSize: subFont }}>
                         {item.user?.email || 'Email não disponível'}
                     </Text>
-                    <Text className="text-gray-300 text-sm mb-0.5">
+                    <Text className="text-gray-300 mb-0.5" style={{ fontSize: subFont }}>
                         CPF: {item.user?.cpf || 'Não disponível'}
                     </Text>
-                    <Text className="text-gray-300 text-sm mb-1">
-                        Tipo: <Text className="text-primary font-bold">{item.ticketType?.name || 'Não disponível'}</Text>
+                    <Text className="text-gray-300 mb-1" style={{ fontSize: subFont }}>
+                        Tipo: <Text className="text-primary font-bold" style={{ fontSize: subFont }}>{item.ticketType?.name || 'Não disponível'}</Text>
                     </Text>
                     <View className="flex-row items-center mt-1">
                         <Text 
-                            className={`text-xs mr-1.5 ${
+                            className={`mr-1.5 ${
                                 isUsed ? 'text-yellow-500' : 
                                 isInvalid ? 'text-red-500' : 
                                 'text-green-500'
                             }`}
+                            style={{ fontSize: statusDotSize, lineHeight: statusDotSize }}
                         >
                             ●
                         </Text>
-                        <Text className="text-white text-sm font-bold">
+                        <Text className="text-white font-bold" style={{ fontSize: subFont }}>
                             {item.status === 'used' ? 'Utilizado' :
                             item.status === 'refunded' ? 'Reembolsado' :
                             item.status === 'cancelled' ? 'Cancelado' : 'Disponível'}
@@ -240,10 +258,15 @@ export default function SearchTicketsScreen() {
 
                 {!isUsed && !isInvalid && (
                     <TouchableOpacity
-                        className="bg-primary px-4 py-2 rounded-lg"
+                        className="bg-primary rounded-lg"
                         onPress={() => handleValidateTicket(item._id)}
+                        style={{
+                            paddingVertical: isTablet ? 10 : 8,
+                            paddingHorizontal: isTablet ? 16 : 12,
+                        }}
+                        hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
                     >
-                        <Text className="text-white text-sm font-bold">Validar</Text>
+                        <Text className="text-white font-bold" style={{ fontSize: buttonFont }}>Validar</Text>
                     </TouchableOpacity>
                 )}
             </Animated.View>
@@ -262,41 +285,53 @@ export default function SearchTicketsScreen() {
             />
             
             {/* Header */}
-            <View className="flex-row items-center px-4 py-3 bg-backgroundDark border-b border-gray-700">
-                <TouchableOpacity onPress={() => router.back()} className="mr-4">
-                    <Text className="text-primary text-base">← Voltar</Text>
+            <View
+                className="flex-row items-center bg-backgroundDark border-b border-gray-700"
+                style={{ paddingHorizontal: spacing, paddingVertical: isTablet ? 14 : 12 }}
+            >
+                <TouchableOpacity onPress={() => router.back()} className="mr-4" hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
+                    <Text className="text-primary" style={{ fontSize: subFont }}>← Voltar</Text>
                 </TouchableOpacity>
-                <Text className="text-white text-lg font-semibold flex-1">
+                <Text className="text-white font-semibold flex-1" style={{ fontSize: headerFont }}>
                     {event?.name ? `Buscar Ingressos: ${event.name}` : 'Buscar Ingressos'}
                 </Text>
             </View>
 
             {/* Search Container */}
-            <View className="p-4 bg-backgroundDark mb-2 border-b border-gray-700">
+            <View
+                className="bg-backgroundDark mb-2 border-b border-gray-700"
+                style={{
+                    paddingHorizontal: spacing,
+                    paddingVertical: isTablet ? 16 : 12,
+                    alignSelf: 'center',
+                    width: '100%',
+                    maxWidth: maxContentWidth,
+                }}
+            >
                 {/* Search Type Buttons */}
                 <View className="flex-row mb-3">
                     <TouchableOpacity
-                        className={`flex-1 py-2 items-center border-b-2 ${
-                            searchType === 'email' ? 'border-b-primary' : 'border-b-transparent'
-                        }`}
+                        className={`flex-1 items-center border-b-2 ${searchType === 'email' ? 'border-b-primary' : 'border-b-transparent'}`}
                         onPress={() => setSearchType('email')}
+                        style={{ paddingVertical: isTablet ? 10 : 8 }}
                     >
-                        <Text className={`text-base ${
-                            searchType === 'email' ? 'text-primary' : 'text-gray-400'
-                        }`}>
+                        <Text
+                            style={{ fontSize: inputFont }}
+                            className={`${searchType === 'email' ? 'text-primary' : 'text-gray-400'}`}
+                        >
                             Email
                         </Text>
                     </TouchableOpacity>
 
                     <TouchableOpacity
-                        className={`flex-1 py-2 items-center border-b-2 ${
-                            searchType === 'cpf' ? 'border-b-primary' : 'border-b-transparent'
-                        }`}
+                        className={`flex-1 items-center border-b-2 ${searchType === 'cpf' ? 'border-b-primary' : 'border-b-transparent'}`}
                         onPress={() => setSearchType('cpf')}
+                        style={{ paddingVertical: isTablet ? 10 : 8 }}
                     >
-                        <Text className={`text-base ${
-                            searchType === 'cpf' ? 'text-primary' : 'text-gray-400'
-                        }`}>
+                        <Text
+                            style={{ fontSize: inputFont }}
+                            className={`${searchType === 'cpf' ? 'text-primary' : 'text-gray-400'}`}
+                        >
                             CPF
                         </Text>
                     </TouchableOpacity>
@@ -304,25 +339,33 @@ export default function SearchTicketsScreen() {
 
                 {/* Search Input */}
                 <TextInput
-                    className="bg-zinc-700 text-white rounded-lg px-4 py-3 text-base mb-3"
+                    className="bg-zinc-700 text-white rounded-lg mb-3"
                     placeholder={searchType === 'email' ? 'Digite o email do comprador' : 'Digite o CPF do comprador'}
                     placeholderTextColor="#999"
                     value={searchValue}
                     onChangeText={setSearchValue}
-                    keyboardType={searchType === 'email' ? 'email-address' : 'numeric'}
+                    keyboardType={searchType === 'email' ? 'email-address' : (Platform.OS === 'ios' ? 'number-pad' : 'numeric')}
                     autoCapitalize="none"
+                    style={{
+                        fontSize: inputFont,
+                        paddingVertical: isTablet ? 14 : 12,
+                        paddingHorizontal: 16,
+                    }}
                 />
 
                 {/* Search Button */}
                 <TouchableOpacity
-                    className="bg-primary py-3 rounded-lg items-center"
+                    className="bg-primary rounded-lg items-center"
                     onPress={handleSearch}
                     disabled={isSearching}
+                    style={{
+                        paddingVertical: isTablet ? 14 : 12,
+                    }}
                 >
                     {isSearching ? (
                         <ActivityIndicator color="#FFFFFF" />
                     ) : (
-                        <Text className="text-white text-base font-bold">Buscar</Text>
+                        <Text className="text-white font-bold" style={{ fontSize: buttonFont }}>Buscar</Text>
                     )}
                 </TouchableOpacity>
             </View>
@@ -333,16 +376,23 @@ export default function SearchTicketsScreen() {
                 renderItem={renderTicketItem}
                 keyExtractor={(item) => item._id}
                 className="px-4"
+                contentContainerStyle={{
+                    alignSelf: 'center',
+                    width: '100%',
+                    maxWidth: maxContentWidth,
+                    paddingHorizontal: spacing,
+                    paddingBottom: isTablet ? 24 : 16,
+                }}
                 ListEmptyComponent={() => (
                     !isSearching && searchValue.trim().length > 0 ? (
                         <View className="items-center justify-center py-8">
-                            <Text className="text-white text-base font-bold mb-2">Nenhum resultado encontrado</Text>
-                            <Text className="text-gray-300 text-sm">Tente outro email ou CPF</Text>
+                            <Text className="text-white font-bold mb-2" style={{ fontSize: titleFont }}>Nenhum resultado encontrado</Text>
+                            <Text className="text-gray-300" style={{ fontSize: subFont }}>Tente outro email ou CPF</Text>
                         </View>
                     ) : !isSearching ? (
                         <View className="items-center justify-center py-8">
-                            <Text className="text-white text-base font-bold mb-2">Busque por ingressos</Text>
-                            <Text className="text-gray-300 text-sm">Digite um email ou CPF para buscar</Text>
+                            <Text className="text-white font-bold mb-2" style={{ fontSize: titleFont }}>Busque por ingressos</Text>
+                            <Text className="text-gray-300" style={{ fontSize: subFont }}>Digite um email ou CPF para buscar</Text>
                         </View>
                     ) : null
                 )}

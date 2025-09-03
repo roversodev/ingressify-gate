@@ -1,5 +1,6 @@
 import { api } from '@/api';
 import CustomAlert from '@/components/CustomAlert';
+import { HapticTab } from '@/components/HapticTab';
 import { IconSymbol } from '@/components/ui/IconSymbol';
 import { useUser } from '@clerk/clerk-expo';
 import { useMutation, useQuery } from 'convex/react';
@@ -8,21 +9,54 @@ import React, { useEffect, useState } from 'react';
 import {
     ActivityIndicator,
     FlatList,
+    Platform,
     SafeAreaView,
     Text,
     TextInput,
     TouchableOpacity,
+    useWindowDimensions,
     View
 } from 'react-native';
 
 export default function ListValidationScreen() {
-    const { validationUrl } = useLocalSearchParams<{ validationUrl: string }>();
+    const params = useLocalSearchParams<{ validationUrl?: string | string[] }>();
+    const rawValidationUrl = params.validationUrl;
+    const validationUrlStr = Array.isArray(rawValidationUrl) ? rawValidationUrl[0] : rawValidationUrl;
+    const safeValidationUrl =
+        typeof validationUrlStr === 'string' && validationUrlStr.trim().length > 0
+            ? validationUrlStr
+            : null;
     const router = useRouter();
     const { isLoaded, isSignedIn, user } = useUser();
     const [searchTerm, setSearchTerm] = useState("");
     const [isSearching, setIsSearching] = useState(false);
     const [selectedParticipant, setSelectedParticipant] = useState<any>(null);
+    const { width, height } = useWindowDimensions();
+    const isLandscape = width > height;
+    const isTablet = ((Platform as any).isPad === true) || Math.min(width, height) >= 768;
 
+    const headerIconSize = isTablet ? 28 : 24;
+    const headerTitleSize = isTablet ? 20 : 18;
+
+    const infoIconSize = isTablet ? 24 : 20;
+    const infoTitleSize = isTablet ? 20 : 16;
+    const infoSubtitleSize = isTablet ? 16 : 14;
+
+    const statNumberSize = isTablet ? 28 : 24;
+    const statLabelSize = isTablet ? 14 : 12;
+
+    const inputFontSize = isTablet ? 18 : 16;
+    const searchButtonSize = isTablet ? 56 : 48;
+
+    const participantNameSize = isTablet ? 18 : 16;
+    const participantMetaSize = isTablet ? 14 : 12;
+
+    const badgeIconSize = isTablet ? 20 : 16;
+    const badgeFontSize = isTablet ? 14 : 12;
+
+    const actionButtonFontSize = isTablet ? 16 : 14;
+
+    const containerMaxWidth = isTablet ? 900 : undefined;
     // Estado para o alerta personalizado
     const [alert, setAlert] = useState<{
         visible: boolean;
@@ -58,21 +92,27 @@ export default function ListValidationScreen() {
     const updateValidatorUserId = useMutation(api.eventLists.updateValidatorUserId);
 
     // Queries
-    const eventList = useQuery(api.eventLists.getEventListByValidationUrl, {
-        validationUrl: validationUrl as string
-    });
+    const eventList = useQuery(
+        api.eventLists.getEventListByValidationUrl,
+        safeValidationUrl ? { validationUrl: safeValidationUrl } : "skip"
+    );
 
-    const event = useQuery(api.events.getById,
+    const event = useQuery(
+        api.events.getById,
         eventList ? { eventId: eventList.eventId } : "skip"
     );
 
-    const listSubscriptions = useQuery(api.eventLists.getListSubscriptions,
+    const listSubscriptions = useQuery(
+        api.eventLists.getListSubscriptions,
         eventList ? { listId: eventList._id } : "skip"
     );
 
     // Verificar permissão do usuário
-    const validatorPermission = useQuery(api.eventLists.checkValidatorPermission,
-        isSignedIn && user ? { validationUrl: validationUrl as string, userId: user.id } : "skip"
+    const validatorPermission = useQuery(
+        api.eventLists.checkValidatorPermission,
+        isSignedIn && user && safeValidationUrl
+            ? { validationUrl: safeValidationUrl, userId: user.id }
+            : "skip"
     );
 
     // Mutations
@@ -80,16 +120,16 @@ export default function ListValidationScreen() {
 
     // Atualizar o userId do validador quando ele acessar a página
     useEffect(() => {
-        if (isSignedIn && user && user.primaryEmailAddress) {
+        if (isSignedIn && user && user.primaryEmailAddress && safeValidationUrl) {
             updateValidatorUserId({
-                validationUrl: validationUrl as string,
+                validationUrl: safeValidationUrl,
                 email: user.primaryEmailAddress.emailAddress,
                 userId: user.id,
             }).catch(error => {
                 console.error("Erro ao atualizar userId do validador:", error);
             });
         }
-    }, [isSignedIn, user, validationUrl, updateValidatorUserId]);
+    }, [isSignedIn, user, safeValidationUrl, updateValidatorUserId]);
 
     if (!isLoaded) {
         return (
@@ -99,7 +139,49 @@ export default function ListValidationScreen() {
         );
     }
 
-    if (!eventList || !event) {
+    // Param inválido/ausente: não dá para procurar a lista
+    if (!safeValidationUrl) {
+        return (
+            <SafeAreaView className="flex-1 bg-background">
+                <View className="flex-row items-center justify-between px-4 py-3 border-b border-gray-700">
+                    <TouchableOpacity onPress={() => router.back()} className="w-10 h-10 justify-center items-center">
+                        <IconSymbol name="arrow.left" size={24} color="#E65CFF" />
+                    </TouchableOpacity>
+                    <Text className="text-lg font-semibold text-white">Validação de Lista</Text>
+                    <View className="w-10" />
+                </View>
+                <View className="flex-1 justify-center items-center px-6">
+                    <View className="bg-backgroundCard rounded-2xl p-8 items-center max-w-sm w-full">
+                        <View className="w-16 h-16 bg-red-500/10 rounded-full items-center justify-center mb-4">
+                            <IconSymbol name="exclamationmark.triangle" size={32} color="#EF4444" />
+                        </View>
+                        <Text className="text-xl font-bold text-white text-center mb-2">Página não encontrada</Text>
+                        <Text className="text-textSecondary text-center mb-6 leading-5">
+                            A URL de validação é inválida ou está ausente.
+                        </Text>
+                        <TouchableOpacity 
+                            onPress={() => router.push('/')} 
+                            className="bg-primary px-6 py-3 rounded-xl w-full"
+                        >
+                            <Text className="text-white text-center font-semibold">Voltar ao início</Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            </SafeAreaView>
+        );
+    }
+
+    // Carregando dados da lista/evento
+    if (eventList === undefined || event === undefined) {
+        return (
+            <View className="flex-1 bg-background justify-center items-center">
+                <ActivityIndicator size="large" color="#E65CFF" />
+            </View>
+        );
+    }
+
+    // Não encontrado de fato
+    if (eventList === null || event === null) {
         return (
             <SafeAreaView className="flex-1 bg-background">
                 <View className="flex-row items-center justify-between px-4 py-3 border-b border-gray-700">
@@ -260,38 +342,56 @@ export default function ListValidationScreen() {
             {/* Header */}
             <View className="flex-row items-center justify-between px-4 py-3 border-b border-gray-700">
                 <TouchableOpacity onPress={() => router.back()} className="w-10 h-10 justify-center items-center">
-                    <IconSymbol name="arrow.left" size={24} color="#E65CFF" />
+                    <IconSymbol name="arrow.left" size={headerIconSize} color="#E65CFF" />
                 </TouchableOpacity>
-                <Text className="text-lg font-semibold text-white">Validação de Lista</Text>
+                <Text className="text-lg font-semibold text-white" style={{ fontSize: headerTitleSize }}>
+                    Validação de Lista
+                </Text>
                 <View className="w-10" />
             </View>
 
-            <View className="flex-1 p-4">
+            <View className="flex-1 p-4" style={{ maxWidth: containerMaxWidth, alignSelf: 'center', width: '100%' }}>
                 {/* Informações da Lista */}
                 <View className="bg-backgroundCard rounded-2xl p-6 mb-4 shadow-lg">
                     <View className="flex-row items-center mb-3">
                         <View className="w-10 h-10 bg-primary/10 rounded-full items-center justify-center mr-3">
-                            <IconSymbol name="list.bullet" size={20} color="#E65CFF" />
+                            <IconSymbol name="list.bullet" size={infoIconSize} color="#E65CFF" />
                         </View>
                         <View className="flex-1">
-                            <Text className="text-lg font-bold text-white mb-1">{eventList.name}</Text>
-                            <Text className="text-textSecondary text-sm">{event.name}</Text>
+                            <Text className="text-lg font-bold text-white mb-1" style={{ fontSize: infoTitleSize }}>
+                                {eventList.name}
+                            </Text>
+                            <Text className="text-textSecondary text-sm" style={{ fontSize: infoSubtitleSize }}>
+                                {event.name}
+                            </Text>
                         </View>
                     </View>
                     
                     {/* Estatísticas */}
                     <View className="flex-row justify-between pt-4 border-t border-gray-700">
                         <View className="items-center">
-                            <Text className="text-2xl font-bold text-primary">{validatedCount}</Text>
-                            <Text className="text-textSecondary text-xs">Validados</Text>
+                            <Text className="text-2xl font-bold text-primary" style={{ fontSize: statNumberSize }}>
+                                {validatedCount}
+                            </Text>
+                            <Text className="text-textSecondary text-xs" style={{ fontSize: statLabelSize }}>
+                                Validados
+                            </Text>
                         </View>
                         <View className="items-center">
-                            <Text className="text-2xl font-bold text-white">{totalCount}</Text>
-                            <Text className="text-textSecondary text-xs">Total</Text>
+                            <Text className="text-2xl font-bold text-white" style={{ fontSize: statNumberSize }}>
+                                {totalCount}
+                            </Text>
+                            <Text className="text-textSecondary text-xs" style={{ fontSize: statLabelSize }}>
+                                Total
+                            </Text>
                         </View>
                         <View className="items-center">
-                            <Text className="text-2xl font-bold text-yellow-500">{totalCount - validatedCount}</Text>
-                            <Text className="text-textSecondary text-xs">Pendentes</Text>
+                            <Text className="text-2xl font-bold text-yellow-500" style={{ fontSize: statNumberSize }}>
+                                {totalCount - validatedCount}
+                            </Text>
+                            <Text className="text-textSecondary text-xs" style={{ fontSize: statLabelSize }}>
+                                Pendentes
+                            </Text>
                         </View>
                     </View>
                 </View>
@@ -305,19 +405,21 @@ export default function ListValidationScreen() {
                             placeholderTextColor="#6B7280"
                             value={searchTerm}
                             onChangeText={setSearchTerm}
+                            style={{ fontSize: inputFontSize }}
                         />
                     </View>
                     <TouchableOpacity 
-                        className={`w-12 h-12 rounded-xl items-center justify-center shadow-sm ${
+                        className={`rounded-xl items-center justify-center shadow-sm ${
                             isSearching ? 'bg-primary/50' : 'bg-primary'
                         }`}
                         onPress={handleSearch} 
                         disabled={isSearching}
+                        style={{ width: searchButtonSize, height: searchButtonSize }}
                     >
                         {isSearching ? (
                             <ActivityIndicator size="small" color="#FFF" />
                         ) : (
-                            <IconSymbol name="magnifyingglass" size={20} color="#FFF" />
+                            <IconSymbol name="magnifyingglass" size={isTablet ? 22 : 20} color="#FFF" />
                         )}
                     </TouchableOpacity>
                 </View>
@@ -336,42 +438,46 @@ export default function ListValidationScreen() {
                                 onPress={() => setSelectedParticipant(item)}
                             >
                                 <View className="flex-1 mr-3">
-                                    <Text className="text-white font-medium text-base mb-1">
+                                    <Text className="text-white font-medium text-base mb-1" style={{ fontSize: participantNameSize }}>
                                         {item.userName || item.userId}
                                     </Text>
-                                    <Text className="text-textSecondary text-sm">
+                                    <Text className="text-textSecondary text-sm" style={{ fontSize: participantMetaSize }}>
                                         {new Date(item.subscribedAt).toLocaleString('pt-BR')}
                                     </Text>
                                 </View>
                                 
                                 {item.checkedIn ? (
                                     <View className="flex-row items-center bg-green-500/10 px-3 py-2 rounded-lg">
-                                        <IconSymbol name="checkmark.circle.fill" size={16} color="#10B981" />
-                                        <Text className="text-green-500 text-sm font-medium ml-2">Validado</Text>
+                                        <IconSymbol name="checkmark.circle.fill" size={badgeIconSize} color="#10B981" />
+                                        <Text className="text-green-500 text-sm font-medium ml-2" style={{ fontSize: badgeFontSize }}>
+                                            Validado
+                                        </Text>
                                     </View>
                                 ) : (
-                                    <TouchableOpacity
+                                    <HapticTab
                                         className="bg-primary px-4 py-2 rounded-lg shadow-sm active:bg-primary/80"
                                         onPress={(e) => {
                                             e.stopPropagation();
                                             handleCheckIn(item.userId);
                                         }}
                                     >
-                                        <Text className="text-white text-sm font-semibold">Validar</Text>
-                                    </TouchableOpacity>
+                                        <Text className="text-white text-sm font-semibold" style={{ fontSize: actionButtonFontSize }}>
+                                            Validar
+                                        </Text>
+                                    </HapticTab>
                                 )}
                             </TouchableOpacity>
                         )}
                         ListEmptyComponent={() => (
                             <View className="flex-1 justify-center items-center py-16">
                                 <View className="w-16 h-16 bg-gray-600/20 rounded-full items-center justify-center mb-4">
-                                    <IconSymbol name="person.3" size={32} color="#6B7280" />
+                                    <IconSymbol name="person.3" size={isTablet ? 36 : 32} color="#6B7280" />
                                 </View>
-                                <Text className="text-textSecondary text-center text-base">
+                                <Text className="text-textSecondary text-center text-base" style={{ fontSize: participantNameSize }}>
                                     {searchTerm ? 'Nenhum participante encontrado' : 'Nenhum participante inscrito'}
                                 </Text>
                                 {searchTerm && (
-                                    <Text className="text-textSecondary text-center text-sm mt-1">
+                                    <Text className="text-textSecondary text-center text-sm mt-1" style={{ fontSize: participantMetaSize }}>
                                         Tente buscar por outro termo
                                     </Text>
                                 )}
@@ -383,19 +489,21 @@ export default function ListValidationScreen() {
                 {/* Detalhes do Participante Selecionado */}
                 {selectedParticipant && (
                     <View className="absolute inset-0 bg-black/50 justify-end">
-                        <View className="bg-backgroundCard rounded-t-3xl p-6 max-h-96">
+                        <View className="bg-background rounded-t-3xl p-6 max-h-96">
                             <View className="flex-row items-center justify-between mb-6">
                                 <View className="flex-row items-center">
                                     <View className="w-10 h-10 bg-primary/10 rounded-full items-center justify-center mr-3">
-                                        <IconSymbol name="person.circle" size={24} color="#E65CFF" />
+                                        <IconSymbol name="person.circle" size={isTablet ? 28 : 24} color="#E65CFF" />
                                     </View>
-                                    <Text className="text-lg font-bold text-white">Detalhes do Participante</Text>
+                                    <Text className="text-lg font-bold text-white" style={{ fontSize: isTablet ? 20 : 18 }}>
+                                        Detalhes do Participante
+                                    </Text>
                                 </View>
                                 <TouchableOpacity 
                                     onPress={() => setSelectedParticipant(null)}
                                     className="w-8 h-8 items-center justify-center"
                                 >
-                                    <IconSymbol name="xmark" size={20} color="#6B7280" />
+                                    <IconSymbol name="xmark" size={isTablet ? 22 : 20} color="#6B7280" />
                                 </TouchableOpacity>
                             </View>
                             

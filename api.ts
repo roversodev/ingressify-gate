@@ -302,6 +302,12 @@ export type PublicApiType = {
       { eventId: Id<"events"> },
       any
     >;
+    getUserTicketsGroupedByEvent: FunctionReference<
+      "query",
+      "public",
+      { userId: string },
+      any
+    >;
   };
   migrations: {
     addSlugsToEvents: {
@@ -653,6 +659,12 @@ export type PublicApiType = {
       { eventId: Id<"events"> },
       any
     >;
+    getAllEventTicketTypes: FunctionReference<
+      "query",
+      "public",
+      { eventId: Id<"events"> },
+      any
+    >;
     createTicketType: FunctionReference<
       "mutation",
       "public",
@@ -811,6 +823,18 @@ export type PublicApiType = {
       "query",
       "public",
       { cpf?: string; email?: string; eventId?: Id<"events"> },
+      any
+    >;
+    getUserTickets: FunctionReference<
+      "query",
+      "public",
+      { userEmail: string },
+      any
+    >;
+    getUserTicketsByEvent: FunctionReference<
+      "query",
+      "public",
+      { eventId: Id<"events">; userEmail: string },
       any
     >;
   };
@@ -984,6 +1008,12 @@ export type PublicApiType = {
       any
     >;
     getUserStats: FunctionReference<"query", "public", { userId: string }, any>;
+    excludeUser: FunctionReference<
+      "mutation",
+      "public",
+      { userId: string },
+      any
+    >;
   };
   validators: {
     inviteValidator: FunctionReference<
@@ -1294,12 +1324,35 @@ export type PublicApiType = {
       { cpf: string; eventId?: Id<"events">; userId: string },
       any
     >;
+    listAllEventsWithOrganization: FunctionReference<
+      "query",
+      "public",
+      { limit?: number; searchTerm?: string; skip?: number; userId: string },
+      any
+    >;
+    getOrganizationCompletedWithdrawals: FunctionReference<
+      "mutation",
+      "public",
+      { organizationId: Id<"organizations"> },
+      any
+    >;
   };
   customers: {
     create: FunctionReference<
       "mutation",
       "public",
-      { customerId: string; email: string; userId: string },
+      {
+        customerId: string;
+        email: string;
+        provider: "pagarme" | "mercadopago";
+        userId: string;
+      },
+      any
+    >;
+    getByUserIdAndProvider: FunctionReference<
+      "query",
+      "public",
+      { provider: "pagarme" | "mercadopago"; userId: string },
       any
     >;
     getByUserId: FunctionReference<"query", "public", { userId: string }, any>;
@@ -1436,6 +1489,36 @@ export type PublicApiType = {
       "mutation",
       "public",
       { email: string; userId: string; validationUrl: string },
+      any
+    >;
+  };
+  paymentCards: {
+    save: FunctionReference<
+      "mutation",
+      "public",
+      {
+        brand?: string;
+        cardId: string;
+        customerId: string;
+        expMonth?: string;
+        expYear?: string;
+        holderName?: string;
+        last4?: string;
+        provider: "pagarme" | "mercadopago";
+        userId: string;
+      },
+      any
+    >;
+    listByUserProvider: FunctionReference<
+      "query",
+      "public",
+      { provider: "pagarme" | "mercadopago"; userId: string },
+      any
+    >;
+    deleteByCardId: FunctionReference<
+      "mutation",
+      "public",
+      { cardId: string },
       any
     >;
   };

@@ -1,5 +1,7 @@
+import { api } from '@/api';
 import { useAuth, useUser } from '@clerk/clerk-expo';
 import { Ionicons } from '@expo/vector-icons';
+import { useMutation } from 'convex/react';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
@@ -10,6 +12,7 @@ import {
   ScrollView,
   Text,
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from 'react-native';
 
@@ -31,9 +34,33 @@ export default function ProfileScreen() {
     accuracy: 0,
   });
   const [isLoadingStats, setIsLoadingStats] = useState(true);
-  // const stats = useQuery(api.users.getUserStats, {
-  //   userId: user?.id || '',
-  // });
+  const [isDeleting, setIsDeleting] = useState(false);
+  const excludeUser = useMutation(api.users.excludeUser);
+
+  // Responsividade: dimensões e escalas
+  const { width, height } = useWindowDimensions();
+  const isTablet = Math.min(width, height) >= 768;
+  const isLandscape = width > height;
+
+  const headingFont = isTablet ? 30 : undefined;
+
+  const avatarSize = isTablet ? (isLandscape ? 110 : 120) : 96; // 24 * 4 = 96 padrão
+  const badgeSize = isTablet ? 36 : 32;
+  const badgeIconSize = Math.round(badgeSize * 0.5);
+
+  const nameFont = isTablet ? 22 : 20;
+  const emailFont = isTablet ? 18 : 16;
+
+  const itemPaddingV = isTablet ? 16 : 12;
+  const itemPaddingH = isTablet ? 24 : 24;
+  const iconCircleSize = isTablet ? 44 : 40;
+  const menuIconSize = isTablet ? 24 : 20;
+  const menuTitleFont = isTablet ? 18 : 16;
+  const chevronSize = isTablet ? 22 : 20;
+
+  const signoutPaddingV = isTablet ? 16 : 12;
+  const signoutIconSize = isTablet ? 22 : 20;
+  const signoutFont = isTablet ? 18 : 16;
 
   // Função para buscar estatísticas reais do usuário
   const fetchUserStats = async () => {
@@ -74,8 +101,36 @@ const handleSignOut = () => {
         text: 'Sair',
         style: 'destructive',
         onPress: () => {
+          // Apenas desloga; o redirecionamento fica por conta do layout raiz
           signOut();
-          router.replace('/(auth)/sign-in');
+        },
+      },
+    ]
+  );
+};
+
+// Fluxo de exclusão de conta: NÃO navegar manualmente após deletar
+const handleDeleteAccount = () => {
+  Alert.alert(
+    'Excluir conta',
+    'Esta ação é permanente e removerá sua conta e dados associados. Deseja continuar?',
+    [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Excluir',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            setIsDeleting(true);
+            await excludeUser({ userId: user?.id as string });
+            await user?.delete?.();
+            // Não chamar router.replace aqui
+          } catch (err) {
+            console.error('Erro ao excluir conta', err);
+            Alert.alert('Erro', 'Não foi possível excluir a conta. Tente novamente.');
+          } finally {
+            setIsDeleting(false);
+          }
         },
       },
     ]
@@ -103,7 +158,7 @@ const handleMenuPress = (item: string) => {
     case 'about':
       Alert.alert(
         'Sobre o Ingressify',
-        'Ingressify App Leitor v1.0.0\n\nSistema de validação de ingressos para eventos.\n\n© 2025 Ingressify. Todos os direitos reservados.'
+        'Ingressify App Leitor v1.0.2\n\nSistema de validação de ingressos para eventos.\n\n© 2025 Ingressify. Todos os direitos reservados.'
       );
       break;
     case 'privacy':
@@ -131,6 +186,9 @@ const handleMenuPress = (item: string) => {
           },
         ]
       );
+      break;
+    case 'delete':
+      handleDeleteAccount();
       break;
   }
 };
@@ -189,6 +247,12 @@ const menuItems = [
     icon: 'document-text-outline' as const,
     color: '#22d3ee',
   },
+  {
+    id: 'delete',
+    title: isDeleting ? 'Excluindo...' : 'Excluir Conta',
+    icon: 'trash-outline' as const,
+    color: '#ef4444',
+  },
 ];
 
 return (
@@ -196,7 +260,7 @@ return (
     <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
       {/* Header */}
       <View className="px-6 pt-6 pb-4">
-        <Text className="text-3xl font-bold text-white text-center">
+        <Text className="text-3xl font-bold text-white text-center" style={{ fontSize: headingFont }}>
           Perfil
         </Text>
       </View>
@@ -211,16 +275,23 @@ return (
                 <View className="relative">
                   <Image
                     source={{ uri: user.imageUrl }}
-                    className="w-24 h-24 rounded-full"
+                    className="rounded-full"
+                    style={{ width: avatarSize, height: avatarSize }}
                     onError={() => setImageError(true)}
                   />
-                  <View className="absolute -bottom-1 -right-1 w-8 h-8 bg-primary rounded-full items-center justify-center border-2 border-backgroundCard">
-                    <Ionicons name="checkmark" size={16} color="white" />
+                  <View
+                    className="absolute -bottom-1 -right-1 bg-primary items-center justify-center border-2 border-backgroundCard"
+                    style={{ width: badgeSize, height: badgeSize, borderRadius: badgeSize / 2 }}
+                  >
+                    <Ionicons name="checkmark" size={badgeIconSize} color="white" />
                   </View>
                 </View>
               ) : (
-                <View className="w-24 h-24 rounded-full bg-primary items-center justify-center shadow-lg">
-                  <Text className="text-2xl font-bold text-white">
+                <View
+                  className="rounded-full bg-primary items-center justify-center shadow-lg"
+                  style={{ width: avatarSize, height: avatarSize }}
+                >
+                  <Text className="font-bold text-white" style={{ fontSize: isTablet ? 28 : 24 }}>
                     {getUserInitials()}
                   </Text>
                 </View>
@@ -228,16 +299,16 @@ return (
             </View>
 
             {/* User Details */}
-            <Text className="text-xl font-semibold text-white mb-1">
+            <Text className="font-semibold text-white mb-1" style={{ fontSize: nameFont }}>
               {getUserName()}
             </Text>
 
-            <Text className="text-base text-textSecondary mb-4">
+            <Text className="text-textSecondary mb-4" style={{ fontSize: emailFont }}>
               {user?.emailAddresses?.[0]?.emailAddress}
             </Text>
 
             {/* Real Stats */}
-            <View className="flex-row justify-around w-full pt-4 border-t border-gray-700">
+            {/* <View className="flex-row justify-around w-full pt-4 border-t border-gray-700">
               <View className="items-center">
                 {isLoadingStats ? (
                   <View className="w-6 h-6 bg-gray-600 rounded animate-pulse mb-1" />
@@ -268,7 +339,7 @@ return (
                 )}
                 <Text className="text-sm text-textSecondary">Precisão</Text>
               </View>
-            </View>
+            </View> */}
           </View>
         </View>
       </View>
@@ -279,28 +350,23 @@ return (
           {menuItems.map((item, index) => (
             <TouchableOpacity
               key={item.id}
-              className={`flex-row items-center px-6 py-4 active:bg-gray-800 ${index < menuItems.length - 1 ? 'border-b border-gray-700' : ''
-                }`}
+              className={`flex-row items-center active:bg-gray-800 ${index < menuItems.length - 1 ? 'border-b border-gray-700' : ''}`}
               onPress={() => handleMenuPress(item.id)}
               activeOpacity={0.7}
+              style={{ paddingVertical: itemPaddingV, paddingHorizontal: itemPaddingH }}
             >
-              <View className="w-10 h-10 rounded-full bg-gray-800 items-center justify-center mr-4">
-                <Ionicons
-                  name={item.icon}
-                  size={20}
-                  color={item.color}
-                />
+              <View
+                className="rounded-full bg-gray-800 items-center justify-center mr-4"
+                style={{ width: iconCircleSize, height: iconCircleSize }}
+              >
+                <Ionicons name={item.icon} size={menuIconSize} color={item.color} />
               </View>
 
-              <Text className="flex-1 text-white text-base font-medium">
+              <Text className="flex-1 text-white font-medium" style={{ fontSize: menuTitleFont }}>
                 {item.title}
               </Text>
 
-              <Ionicons
-                name="chevron-forward"
-                size={20}
-                color="#9CA3AF"
-              />
+              <Ionicons name="chevron-forward" size={chevronSize} color="#9CA3AF" />
             </TouchableOpacity>
           ))}
         </View>
@@ -309,13 +375,14 @@ return (
       {/* Sign Out Button */}
       <View className="mx-6 mb-8">
         <TouchableOpacity
-          className="bg-red-600 rounded-2xl py-4 px-6 shadow-lg active:bg-red-700"
+          className="bg-red-600 rounded-2xl px-6 shadow-lg active:bg-red-700"
           onPress={handleSignOut}
           activeOpacity={0.8}
+          style={{ paddingVertical: signoutPaddingV }}
         >
           <View className="flex-row items-center justify-center">
-            <Ionicons name="log-out-outline" size={20} color="white" />
-            <Text className="text-white text-base font-semibold ml-2">
+            <Ionicons name="log-out-outline" size={signoutIconSize} color="white" />
+            <Text className="text-white font-semibold ml-2" style={{ fontSize: signoutFont }}>
               Sair da Conta
             </Text>
           </View>
@@ -324,8 +391,8 @@ return (
 
       {/* App Version */}
       <View className="items-center pb-8 mb-12">
-        <Text className="text-textSecondary text-sm">
-          Ingressify App Leitor v1.0.0
+        <Text className="text-textSecondary" style={{ fontSize: isTablet ? 14 : 12 }}>
+          Ingressify App Leitor v1.0.2
         </Text>
       </View>
     </ScrollView>

@@ -1,4 +1,5 @@
 import { api } from '@/api';
+import { HapticTab } from '@/components/HapticTab';
 import { useUser } from '@clerk/clerk-expo';
 import { useQuery } from 'convex/react';
 import { type GenericId as Id } from "convex/values";
@@ -11,8 +12,8 @@ import {
   RefreshControl,
   SafeAreaView,
   Text,
-  TouchableOpacity,
   View,
+  useWindowDimensions
 } from 'react-native';
 
 interface Event {
@@ -48,18 +49,32 @@ function EventItem({ event, onPress }: { event: any, onPress: () => void }) {
     ? (validatedTickets / totalTickets) * 100 
     : 0;
 
+  // Responsividade no card
+  const { width, height } = useWindowDimensions();
+  const isTablet = Math.min(width, height) >= 768;
+  const isLandscape = width > height;
+  const imageHeight = isTablet ? (isLandscape ? 130 : 160) : 160;
+
+  const titleFont = isTablet ? 20 : undefined;
+  const locationFont = isTablet ? 14 : undefined;
+  const dateFont = isTablet ? 13 : undefined;
+  const statNumberFont = isTablet ? 22 : undefined;
+  const statLabelFont = isTablet ? 12 : undefined;
+  const progressLabelFont = isTablet ? 15 : undefined;
+  const progressPercentFont = isTablet ? 16 : undefined;
+
   return (
-    <TouchableOpacity 
+    <HapticTab 
       className="bg-backgroundCard rounded-xl p-5 mb-4 border border-gray-800/30"
       onPress={onPress}
-      activeOpacity={0.8}
+      style={{ flex: 1 }}
     >
       {/* Imagem do evento */}
       {imageUrl && (
         <View className="mb-4 rounded-lg overflow-hidden">
           <Image
             source={{ uri: imageUrl }}
-            style={{ width: '100%', height: 160 }}
+            style={{ width: '100%', height: imageHeight }}
             contentFit="cover"
             transition={200}
           />
@@ -69,15 +84,15 @@ function EventItem({ event, onPress }: { event: any, onPress: () => void }) {
       {/* Header do evento */}
       <View className="flex-row justify-between items-start mb-4">
         <View className="flex-1 mr-4">
-          <Text className="text-white text-lg font-semibold mb-1" numberOfLines={2}>
+          <Text className="text-white text-lg font-semibold mb-1" numberOfLines={2} style={{ fontSize: titleFont }}>
             {event.name}
           </Text>
-          <Text className="text-gray-400 text-sm">
+          <Text className="text-gray-400 text-sm" style={{ fontSize: locationFont }}>
             {event.location}
           </Text>
         </View>
         <View className="bg-primary/10 px-3 py-1 rounded-full">
-          <Text className="text-primary text-xs font-medium">
+          <Text className="text-primary text-xs font-medium" style={{ fontSize: dateFont }}>
             {new Date(event.date).toLocaleDateString('pt-BR', { 
               day: '2-digit', 
               month: 'short' 
@@ -89,20 +104,20 @@ function EventItem({ event, onPress }: { event: any, onPress: () => void }) {
       {/* Estatísticas */}
       <View className="flex-row justify-between mb-4">
         <View className="flex-1 mr-2">
-          <Text className="text-primary text-xl font-bold">{validatedTickets}</Text>
-          <Text className="text-gray-500 text-xs uppercase tracking-wide">Validados</Text>
+          <Text className="text-primary text-xl font-bold" style={{ fontSize: statNumberFont }}>{validatedTickets}</Text>
+          <Text className="text-gray-500 text-xs uppercase tracking-wide" style={{ fontSize: statLabelFont }}>Validados</Text>
         </View>
         <View className="flex-1 ml-2">
-          <Text className="text-white text-xl font-bold">{totalTickets}</Text>
-          <Text className="text-gray-500 text-xs uppercase tracking-wide">Total</Text>
+          <Text className="text-white text-xl font-bold" style={{ fontSize: statNumberFont }}>{totalTickets}</Text>
+          <Text className="text-gray-500 text-xs uppercase tracking-wide" style={{ fontSize: statLabelFont }}>Total</Text>
         </View>
       </View>
       
       {/* Barra de progresso */}
       <View className="space-y-2">
         <View className="flex-row justify-between items-center">
-          <Text className="text-gray-400 text-sm">Progresso</Text>
-          <Text className="text-primary text-sm font-medium">{progressPercentage.toFixed(0)}%</Text>
+          <Text className="text-gray-400 text-sm" style={{ fontSize: progressLabelFont }}>Progresso</Text>
+          <Text className="text-primary text-sm font-medium" style={{ fontSize: progressPercentFont }}>{progressPercentage.toFixed(0)}%</Text>
         </View>
         <View className="h-2 bg-progressBar rounded-full overflow-hidden">
           <View 
@@ -111,7 +126,7 @@ function EventItem({ event, onPress }: { event: any, onPress: () => void }) {
           />
         </View>
       </View>
-    </TouchableOpacity>
+    </HapticTab>
   );
 }
 
@@ -119,6 +134,14 @@ export default function EventsScreen() {
   const { user } = useUser();
   const router = useRouter();
   const [refreshing, setRefreshing] = React.useState(false);
+
+  // Responsividade na lista
+  const { width, height } = useWindowDimensions();
+  const isTablet = Math.min(width, height) >= 768;
+  const isLandscape = width > height;
+  const numColumns = isTablet ? 2 : 1;
+  const containerPaddingH = isTablet ? 24 : 20;
+  const bottomPadding = isTablet ? (isLandscape ? 120 : 140) : 100;
 
   // Buscar eventos que o usuário criou
   const sellerEvents = useQuery(
@@ -213,8 +236,8 @@ export default function EventsScreen() {
     <View className="flex-1 bg-background pt-20">
       {/* Header */}
       <View className="px-6 pt-6 pb-4">
-        <Text className="text-white text-2xl font-bold mb-1">Eventos</Text>
-        <Text className="text-gray-400 text-sm">
+        <Text className="text-white text-2xl font-bold mb-1" style={{ fontSize: isTablet ? 28 : undefined }}>Eventos</Text>
+        <Text className="text-gray-400 text-sm" style={{ fontSize: isTablet ? 16 : undefined }}>
           {formattedEvents.length} {formattedEvents.length === 1 ? 'evento' : 'eventos'}
         </Text>
       </View>
@@ -235,9 +258,11 @@ export default function EventsScreen() {
             tintColor="#E65CFF"
           />
         }
+        numColumns={numColumns}
+        columnWrapperStyle={numColumns > 1 ? { gap: 16, paddingHorizontal: containerPaddingH } : undefined}
         contentContainerStyle={{ 
-          paddingHorizontal: 20, 
-          paddingBottom: 100 
+          paddingHorizontal: numColumns > 1 ? 0 : containerPaddingH,
+          paddingBottom: bottomPadding,
         }}
         showsVerticalScrollIndicator={false}
       />

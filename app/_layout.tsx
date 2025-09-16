@@ -5,16 +5,33 @@ import { useFonts } from 'expo-font';
 import { Redirect, Stack, useSegments } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import 'react-native-reanimated';
 import "./globals.css";
 
-
 import { api } from '@/api';
 import SplashScreenComponent from '@/components/SplashScreen';
+import SyncUserWithConvex from '@/components/SyncUserWithConvex';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { useUser } from '@clerk/clerk-expo';
-import React from 'react';
+import * as Sentry from '@sentry/react-native';
+import { ErrorBoundary } from '../components/ErrorBoundary';
+
+Sentry.init({
+  dsn: 'https://628fe55193818cd4caeacd0591b09028@o4508262541623296.ingest.us.sentry.io/4509961974251520',
+
+  // Adds more context data to events (IP address, cookies, user, etc.)
+  // For more information, visit: https://docs.sentry.io/platforms/react-native/data-management/data-collected/
+  sendDefaultPii: true,
+
+  // Configure Session Replay
+  replaysSessionSampleRate: 0.1,
+  replaysOnErrorSampleRate: 1,
+  integrations: [Sentry.mobileReplayIntegration()],
+
+  // uncomment the line below to enable Spotlight (https://spotlightjs.com)
+  // spotlight: __DEV__,
+});
 
 const publishableKey = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY || 'pk_live_Y2xlcmsuaW5ncmVzc2lmeS5jb20uYnIk';
 const convexUrl = process.env.EXPO_PUBLIC_CONVEX_URL || 'https://helpful-stingray-396.convex.cloud';
@@ -238,7 +255,7 @@ function AppContent() {
   );
 }
 
-export default function RootLayout() {
+export default Sentry.wrap(function RootLayout() {
   const [loaded] = useFonts({
     SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
   });
@@ -250,10 +267,13 @@ export default function RootLayout() {
 
   // Providers são inicializados IMEDIATAMENTE
   return (
-    <ClerkProvider publishableKey={publishableKey} tokenCache={tokenCache}>
-      <ConvexProvider client={convex}>
-        <AppContent />
-      </ConvexProvider>
-    </ClerkProvider>
+    <ErrorBoundary>
+      <ClerkProvider tokenCache={tokenCache} publishableKey={publishableKey}>
+        <ConvexProvider client={convex}>
+        <SyncUserWithConvex />
+          <AppContent />
+        </ConvexProvider>
+      </ClerkProvider>
+    </ErrorBoundary>
   );
-}
+});

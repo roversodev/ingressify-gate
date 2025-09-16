@@ -6,18 +6,63 @@ import { CameraType, CameraView, useCameraPermissions } from 'expo-camera';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  SafeAreaView,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
   useWindowDimensions
 } from 'react-native';
-
+import { SafeAreaView } from 'react-native-safe-area-context';
 // Importe o componente CustomAlert
 import CustomAlert from '@/components/CustomAlert';
-import { IconSymbol } from '@/components/ui/IconSymbol.ios';
+import { IconSymbol } from '@/components/ui/IconSymbol';
 import { useIsFocused } from '@react-navigation/native';
+import { ErrorBoundary } from '../../components/ErrorBoundary';
+
+// Adicionar esta função para mapear erros do backend para mensagens amigáveis na UI
+function mapBackendErrorToUI(errorType?: string, defaultMessage?: string) {
+  // Valores padrão
+  let title = 'Erro';
+  let message = defaultMessage || 'Ocorreu um erro ao validar o ingresso.';
+
+  // Mapear tipos de erro para mensagens amigáveis
+  switch (errorType) {
+    case 'ALREADY_USED':
+      title = '⚠️ INGRESSO JÁ UTILIZADO';
+      message = defaultMessage || 'Este ingresso já foi utilizado anteriormente.';
+      break;
+    case 'EVENT_MISMATCH':
+      title = '❌ EVENTO INCORRETO';
+      message = defaultMessage || 'Este ingresso não pertence a este evento.';
+      break;
+    case 'REFUNDED':
+      title = '❌ INGRESSO REEMBOLSADO';
+      message = defaultMessage || 'Este ingresso foi reembolsado e não é mais válido.';
+      break;
+    case 'CANCELLED':
+      title = '❌ INGRESSO CANCELADO';
+      message = defaultMessage || 'Este ingresso foi cancelado e não é mais válido.';
+      break;
+    case 'TICKET_NOT_FOUND':
+      title = '❌ INGRESSO NÃO ENCONTRADO';
+      message = defaultMessage || 'Não foi possível encontrar este ingresso.';
+      break;
+    case 'TRANSFERRED':
+      title = '❌ INGRESSO TRANSFERIDO';
+      message = defaultMessage || 'Este ingresso foi transferido e não é mais válido.';
+      break;
+    case 'INTERNAL_ERROR':
+      title = '❌ ERRO INTERNO';
+      message = defaultMessage || 'Ocorreu um erro interno. Tente novamente mais tarde.';
+      break;
+    default:
+      if (errorType) {
+        title = `❌ ${errorType.replace(/_/g, ' ')}`;
+      }
+  }
+
+  return { title, message };
+}
 
 export default function ScannerScreen() {
   const { eventId } = useLocalSearchParams<{ eventId: string }>();
@@ -146,6 +191,8 @@ export default function ScannerScreen() {
     );
   }
 
+
+
   const handleBarcodeScanned = async ({ type, data }: { type: string; data: string }) => {
     // Verificar se já está processando ou se é o mesmo QR code recente
     const now = Date.now();
@@ -162,10 +209,11 @@ export default function ScannerScreen() {
 
     // NOVO: Garantia extra de que o eventId está válido antes de continuar
     if (!safeEventId) {
+      const ui = mapBackendErrorToUI("EVENT_NOT_FOUND", "Não foi possível identificar o evento. Volte e tente novamente.");
       showAlert(
         'error',
-        'Evento inválido',
-        'Não foi possível identificar o evento. Volte e tente novamente.',
+        ui.title,
+        ui.message,
         [{
           text: 'OK',
           onPress: () => {
@@ -197,10 +245,11 @@ export default function ScannerScreen() {
 
       // Validar se tem os dados necessários
       if (!ticketData.ticketId) {
+        const ui = mapBackendErrorToUI("TICKET_NOT_FOUND", "Este QR code não contém informações válidas de ingresso.");
         showAlert(
           'error',
-          'QR Code Inválido',
-          'Este QR code não contém informações válidas de ingresso.',
+          ui.title,
+          ui.message,
           [{
             text: 'OK',
             onPress: () => {
@@ -224,7 +273,7 @@ export default function ScannerScreen() {
       if (result && result.success) {
         showAlert(
           'success',
-          'Ingresso Válido',
+          '✅ ENTRADA LIBERADA',
           `Tipo: ${result.ticketType?.name || 'N/A'} | Qtd: ${result.ticket?.quantity || 1}`,
           [
             {
@@ -238,66 +287,19 @@ export default function ScannerScreen() {
           ]
         );
       } else {
-        // Tratar casos de insucesso baseado no resultado estruturado
-        let alertTitle = 'Ingresso Inválido';
-        let alertMessage = 'Este ingresso não é válido para este evento.';
+        // Usar a função mapBackendErrorToUI para obter título e mensagem formatados
+        const ui = mapBackendErrorToUI(result?.errorType, result?.message);
+        
+        // Determinar o tipo de alerta baseado no errorType
         let alertType = 'error';
-  
-        // Usar o resultado estruturado em vez de mensagens de erro
-        if (result && result.ticket) {
-          switch (result.ticket.status) {
-            case 'used':
-              alertTitle = 'Ingresso Já Utilizado';
-              alertMessage = 'Este ingresso já foi utilizado anteriormente.';
-              alertType = 'warning';
-              break;
-            case 'refunded':
-              alertTitle = 'Ingresso Reembolsado';
-              alertMessage = 'Este ingresso foi reembolsado e não é mais válido.';
-              break;
-            case 'cancelled':
-              alertTitle = 'Ingresso Cancelado';
-              alertMessage = 'Este ingresso foi cancelado.';
-              break;
-            default:
-              // Verificar se é evento incorreto
-              if (result.event && result.event._id !== eventId) {
-                alertTitle = 'Evento Incorreto';
-                alertMessage = 'Este ingresso não pertence a este evento.';
-              }
-              break;
-          }
-        } else if (result && result.errorType) {
-          // Usar errorType se disponível
-          switch (result.errorType) {
-            case 'TICKET_NOT_FOUND':
-              alertTitle = 'Ingresso Não Encontrado';
-              alertMessage = 'Este ingresso não foi encontrado no sistema.';
-              break;
-            case 'EVENT_MISMATCH':
-              alertTitle = 'Evento Incorreto';
-              alertMessage = 'Este ingresso não pertence a este evento.';
-              break;
-            case 'ALREADY_USED':
-              alertTitle = 'Ingresso Já Utilizado';
-              alertMessage = 'Este ingresso já foi utilizado anteriormente.';
-              alertType = 'warning';
-              break;
-            case 'INVALID_STATUS':
-              alertTitle = 'Status Inválido';
-              alertMessage = 'Este ingresso não pode ser validado devido ao seu status atual.';
-              break;
-            default:
-              alertTitle = 'Erro de Validação';
-              alertMessage = result.message || 'Não foi possível validar o ingresso.';
-              break;
-          }
+        if (result?.errorType === 'ALREADY_USED') {
+          alertType = 'warning';
         }
-  
+
         showAlert(
           alertType as 'success' | 'warning' | 'error' | 'info',
-          alertTitle,
-          alertMessage,
+          ui.title,
+          ui.message,
           [{
             text: 'OK',
             onPress: () => {
@@ -310,35 +312,37 @@ export default function ScannerScreen() {
       }
     } catch (error: any) {
       console.error('Erro ao validar ingresso:', error);
-  
-      // Tratamento simplificado para server errors
-      let errorMessage = 'Oops! Algo deu errado. Tente novamente em alguns segundos.';
-      let errorTitle = 'Erro Temporário';
-      
-      // Se não for um server error genérico, tentar extrair informações específicas
-      if (error?.message && !error.message.includes('server error')) {
+
+      // Usar a função mapBackendErrorToUI para tratar erros de exceção
+      let errorType = "INTERNAL_ERROR";
+      let errorMessage = 'Falha de comunicação com o servidor. Tente novamente.';
+
+      // Tentar extrair informações específicas do erro
+      if (error?.message) {
         if (error.message.includes('Este ingresso não pertence a este evento')) {
-          errorTitle = 'Evento Incorreto';
-          errorMessage = 'Este ingresso não pertence a este evento.';
+          errorType = "EVENT_MISMATCH";
         } else if (error.message.includes('Ingresso já foi utilizado')) {
-          errorTitle = 'Ingresso Já Utilizado';
-          errorMessage = 'Este ingresso já foi utilizado anteriormente.';
+          errorType = "ALREADY_USED";
         } else if (error.message.includes('Ingresso reembolsado')) {
-          errorTitle = 'Ingresso Reembolsado';
-          errorMessage = 'Este ingresso foi reembolsado e não é mais válido.';
+          errorType = "REFUNDED";
         } else if (error.message.includes('Ingresso cancelado')) {
-          errorTitle = 'Ingresso Cancelado';
-          errorMessage = 'Este ingresso foi cancelado.';
-        } else {
-          errorMessage = 'Não foi possível validar o ingresso. Verifique se o ingresso está válido e tente novamente.';
-          errorTitle = 'Erro de Validação';
+          errorType = "CANCELLED";
+        } else if (error.message.includes('Ingresso não encontrado')) {
+          errorType = "TICKET_NOT_FOUND";
+        }
+        
+        // Se temos uma mensagem de erro específica, usá-la
+        if (!error.message.includes('server error')) {
+          errorMessage = error.message;
         }
       }
-  
+
+      const ui = mapBackendErrorToUI(errorType, errorMessage);
+      
       showAlert(
-        'error',
-        errorTitle,
-        errorMessage,
+        errorType === "ALREADY_USED" ? 'warning' : 'error',
+        ui.title,
+        ui.message,
         [{
           text: 'OK',
           onPress: () => {
@@ -356,80 +360,82 @@ export default function ScannerScreen() {
   };
 
   return (
-    <SafeAreaView className='flex-1 bg-background'>
-      <CustomAlert
-        visible={alert.visible}
-        type={alert.type}
-        title={alert.title}
-        message={alert.message}
-        actions={alert.actions}
-        onClose={() => setAlert(prev => ({ ...prev, visible: false }))}
-      />
+    <ErrorBoundary>
+      <SafeAreaView className='flex-1 bg-background'>
+        <CustomAlert
+          visible={alert.visible}
+          type={alert.type}
+          title={alert.title}
+          message={alert.message}
+          actions={alert.actions}
+          onClose={() => setAlert(prev => ({ ...prev, visible: false }))}
+        />
 
-      <View className='bg-background flex-row items-center py-4 px-3'>
-        <TouchableOpacity onPress={() => router.back()} className='mr-4'>
-          <Text className='text-primary text-[16px]' style={{ fontSize: backFont }}>← Voltar</Text>
-        </TouchableOpacity>
-        <Text className='text-white text-[18px] font-semibold flex-1' style={{ fontSize: headerTitleFont }}>
-          {event?.name ? `${event.name}` : 'Scanner QR Code'}
-        </Text>
-        {event && availability && (
-          <View className="bg-backgroundCard px-3 py-1 rounded-full mr-2">
-            <Text className="text-primary text-sm font-bold" style={{ fontSize: availabilityFont }}>
-              {availability.validatedTickets}/{availability.purchasedTickets}
-            </Text>
-          </View>
-        )}
-        {isEventOwner() && (
-          <TouchableOpacity
-            onPress={() => router.push(`/scanner/validators?eventId=${eventId}`)}
-            style={styles.validatorsButton}
-          >
-            <IconSymbol name="person.2" size={20} color="#fff" />
+        <View className='bg-background flex-row items-center py-4 px-3'>
+          <TouchableOpacity onPress={() => router.back()} className='mr-4'>
+            <Text className='text-primary text-[16px]' style={{ fontSize: backFont }}>← Voltar</Text>
           </TouchableOpacity>
-        )}
-        <TouchableOpacity
-          style={styles.listsButton}
-          onPress={() => router.push(`/scanner/lists?eventId=${eventId}`)}
-        >
-          <IconSymbol size={20} color="#FFFFFF" name={'list.bullet'} />
-        </TouchableOpacity>
-      </View>
-
-      {/* Container relativo para sobrepor UI por cima da câmera */}
-      <View style={styles.cameraContainer}>
-        {/* NOVO: só renderiza a câmera quando a tela está focada */}
-        {isFocused && (
-          <CameraView
-            style={StyleSheet.absoluteFillObject}
-            facing={facing}
-            onBarcodeScanned={scanned ? undefined : handleBarcodeScanned}
-            barcodeScannerSettings={{
-              barcodeTypes: ['qr'], // reduzimos para estabilizar; depois podemos reativar 'pdf417'
-            }}
-          />
-        )}
-
-        {/* Overlay */}
-        <View style={styles.overlay}>
-          <View style={[styles.scanArea, { width: scanSize, height: scanSize }]}>
-            <Text style={[styles.scanText, { fontSize: scanTextFont }]}>
-              {isValidating ? 'Validando ingresso...' : 'Posicione o QR code dentro da área'}
-            </Text>
-          </View>
-        </View>
-
-        {/* Controles */}
-        <View style={[styles.buttonContainer, { bottom: bottomOffset }]}>
+          <Text className='text-white text-[18px] font-semibold flex-1' style={{ fontSize: headerTitleFont }}>
+            {event?.name ? `${event.name}` : 'Scanner QR Code'}
+          </Text>
+          {event && availability && (
+            <View className="bg-backgroundCard px-3 py-1 rounded-full mr-2">
+              <Text className="text-primary text-sm font-bold" style={{ fontSize: availabilityFont }}>
+                {availability.validatedTickets}/{availability.purchasedTickets}
+              </Text>
+            </View>
+          )}
+          {isEventOwner() && (
+            <TouchableOpacity
+              onPress={() => router.push(`/scanner/validators?eventId=${eventId}`)}
+              style={styles.validatorsButton}
+            >
+              <IconSymbol name="person.2" size={20} color="#fff" />
+            </TouchableOpacity>
+          )}
           <TouchableOpacity
-            style={[styles.searchButton, { marginTop: 12 }, searchButtonStyle]}
-            onPress={() => router.push(`/scanner/search?eventId=${safeEventId}`)}
+            style={styles.listsButton}
+            onPress={() => router.push(`/scanner/lists?eventId=${eventId}`)}
           >
-            <Text style={[styles.flipButtonText, { fontSize: buttonTextFont }]}>Buscar por Email/CPF</Text>
+            <IconSymbol size={20} color="#FFFFFF" name={'list.bullet'} />
           </TouchableOpacity>
         </View>
-      </View>
-    </SafeAreaView>
+
+        {/* Container relativo para sobrepor UI por cima da câmera */}
+        <View style={styles.cameraContainer}>
+          {/* NOVO: só renderiza a câmera quando a tela está focada */}
+          {isFocused && (
+            <CameraView
+              style={StyleSheet.absoluteFillObject}
+              facing={facing}
+              onBarcodeScanned={scanned ? undefined : handleBarcodeScanned}
+              barcodeScannerSettings={{
+                barcodeTypes: ['qr'], // reduzimos para estabilizar; depois podemos reativar 'pdf417'
+              }}
+            />
+          )}
+
+          {/* Overlay */}
+          <View style={styles.overlay}>
+            <View style={[styles.scanArea, { width: scanSize, height: scanSize }]}>
+              <Text style={[styles.scanText, { fontSize: scanTextFont }]}>
+                {isValidating ? 'Validando ingresso...' : 'Posicione o QR code dentro da área'}
+              </Text>
+            </View>
+          </View>
+
+          {/* Controles */}
+          <View style={[styles.buttonContainer, { bottom: bottomOffset }]}>
+            <TouchableOpacity
+              style={[styles.searchButton, { marginTop: 12 }, searchButtonStyle]}
+              onPress={() => router.push(`/scanner/search?eventId=${safeEventId}`)}
+            >
+              <Text style={[styles.flipButtonText, { fontSize: buttonTextFont }]}>Buscar por Email/CPF</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </SafeAreaView>
+    </ErrorBoundary>
   );
 }
 const styles = StyleSheet.create({

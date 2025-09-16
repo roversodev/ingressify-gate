@@ -10,13 +10,13 @@ import {
   Image,
   KeyboardAvoidingView,
   Platform,
-  SafeAreaView,
   ScrollView,
   Text,
   TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 export const useWarmUpBrowser = () => {
   useEffect(() => {
@@ -73,13 +73,24 @@ export default function SignInScreen() {
         await setActive!({ session: createdSessionId });
         // Não navegar manualmente; layout raiz redireciona
       } else {
+        // Verifica se é um login existente
         if (signIn?.status === 'complete') {
           await setActive!({ session: signIn.createdSessionId });
           // Não navegar manualmente
-        } else if (signUp?.status === 'complete') {
+        } 
+        // Verifica se é um novo registro
+        else if (signUp?.status === 'complete') {
           await setActive!({ session: signUp.createdSessionId });
           // Não navegar manualmente
-        } else {
+        }
+        // Verifica se precisa de informações adicionais
+        else if (signIn?.status === 'needs_identifier' || signUp?.status === 'missing_requirements') {
+          Alert.alert('Informações Adicionais', 'Algumas informações adicionais são necessárias para completar seu cadastro por favor faça seu cadastro pelo nosso site!');
+        }
+        // Outros casos que realmente precisam de atenção
+        else {
+          console.log('Status do signIn:', signIn?.status);
+          console.log('Status do signUp:', signUp?.status);
           Alert.alert('Atenção', 'Verificação adicional necessária. Tente novamente.');
         }
       }
@@ -128,14 +139,27 @@ export default function SignInScreen() {
       if (createdSessionId) {
         await setActive!({ session: createdSessionId });
         // Não navegar manualmente
-      } else if (signIn?.status === 'complete') {
-        await setActive!({ session: signIn.createdSessionId });
-        // Não navegar manualmente
-      } else if (signUp?.status === 'complete') {
-        await setActive!({ session: signUp.createdSessionId });
-        // Não navegar manualmente
       } else {
-        Alert.alert('Atenção', 'Verificação adicional necessária. Tente novamente.');
+        // Verifica se é um login existente
+        if (signIn?.status === 'complete') {
+          await setActive!({ session: signIn.createdSessionId });
+          // Não navegar manualmente
+        }
+        // Verifica se é um novo registro
+        else if (signUp?.status === 'complete') {
+          await setActive!({ session: signUp.createdSessionId });
+          // Não navegar manualmente
+        }
+        // Verifica se precisa de informações adicionais
+        else if (signIn?.status === 'needs_identifier' || signUp?.status === 'missing_requirements') {
+          Alert.alert('Informações Adicionais', 'Algumas informações adicionais são necessárias para completar seu cadastro por favor faça seu cadastro pelo nosso site!');
+        }
+        // Outros casos
+        else {
+          console.log('Status do signIn:', signIn?.status);
+          console.log('Status do signUp:', signUp?.status);
+          Alert.alert('Atenção', 'Verificação adicional necessária. Tente novamente.');
+        }
       }
     } catch (err: any) {
       let errorMessage = 'Falha ao entrar com Apple.';

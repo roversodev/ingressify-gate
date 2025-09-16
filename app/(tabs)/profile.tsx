@@ -8,13 +8,13 @@ import {
   Alert,
   Image,
   Linking,
-  SafeAreaView,
   ScrollView,
   Text,
   TouchableOpacity,
   useWindowDimensions,
   View,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 // Interface para as estatísticas do usuário
 interface UserStats {

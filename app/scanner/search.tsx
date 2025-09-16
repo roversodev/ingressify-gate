@@ -9,14 +9,14 @@ import {
     ActivityIndicator,
     Animated,
     FlatList,
-    SafeAreaView,
+    Platform,
     Text,
     TextInput,
     TouchableOpacity,
-    View,
-    Platform,
-    useWindowDimensions
+    useWindowDimensions,
+    View
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function SearchTicketsScreen() {
     const { eventId } = useLocalSearchParams<{ eventId: string }>();

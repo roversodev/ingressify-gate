@@ -1,6 +1,8 @@
 import { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import React, { useState } from 'react';
-import { LayoutChangeEvent, View } from 'react-native';
+import { LayoutChangeEvent, StyleSheet, View } from 'react-native';
+import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
+import TabBarButton from './TabBarButton';
 
 export function TabBar({ state, descriptors, navigation }: BottomTabBarProps) {
 
@@ -41,7 +43,9 @@ export function TabBar({ state, descriptors, navigation }: BottomTabBarProps) {
 
                 const onPress = () => {
                     tabPositionX.value = withSpring(buttonWidth * index, {
-                        duration: 1500,
+                        stiffness: 300,
+                        damping: 30,
+                        mass: 1,
                     })
                     const event = navigation.emit({
                         type: 'tabPress',
@@ -75,10 +79,6 @@ export function TabBar({ state, descriptors, navigation }: BottomTabBarProps) {
         </View>
     );
 }
-
-import { StyleSheet } from 'react-native';
-import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
-import TabBarButton from './TabBarButton';
 
 const styles = StyleSheet.create({
     tabbar: {

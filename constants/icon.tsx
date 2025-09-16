@@ -2,10 +2,10 @@ import { Feather } from "@expo/vector-icons";
 import React from "react";
 
 export const icon = {
-        index: (props: any) => (
-            <Feather name='home' size={24} {...props} />
+        index: ({color, ...props}: any) => (
+            <Feather name='home' size={24} color={color} {...props} />
         ),
-        profile: (props: any) => (
-            <Feather name='user' size={24} {...props} />
+        profile: ({color, ...props}: any) => (
+            <Feather name='user' size={24} color={color} {...props} />
         ),
     };

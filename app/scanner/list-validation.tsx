@@ -10,13 +10,13 @@ import {
     ActivityIndicator,
     FlatList,
     Platform,
-    SafeAreaView,
     Text,
     TextInput,
     TouchableOpacity,
     useWindowDimensions,
     View
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function ListValidationScreen() {
     const params = useLocalSearchParams<{ validationUrl?: string | string[] }>();

@@ -18,7 +18,11 @@ const TabBarButton: React.FC<TabBarButtonProps> = ({ onPress, onLongPress, isFoc
     const scale = useSharedValue(0);
 
     useEffect(() => {
-        scale.value = withSpring(isFocused ? 1 : 0, { duration: 350 });
+        scale.value = withSpring(isFocused ? 1 : 0, { 
+            stiffness: 300,
+            damping: 30,
+            mass: 1
+        });
     }, [scale, isFocused]);
 
     const animatedIconStyle = useAnimatedStyle(() => {
@@ -46,7 +50,7 @@ const TabBarButton: React.FC<TabBarButtonProps> = ({ onPress, onLongPress, isFoc
             style={styles.tabbarItem}
         >
             <Animated.View style={animatedIconStyle}>
-                <IconComponent color={isFocused ? '#fff' : '#A3A3A3'} />
+                <IconComponent color={isFocused ? '#FFFFFF' : '#A3A3A3'} style={{color: isFocused ? '#FFFFFF' : '#A3A3A3'}} />
             </Animated.View>
             <Animated.Text style={[{ 
                 color: isFocused ? '#E65CFF' : '#A3A3A3',

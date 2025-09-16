@@ -11,13 +11,13 @@ import {
   FlatList,
   KeyboardAvoidingView,
   Platform,
-  SafeAreaView,
   Text,
   TextInput,
   TouchableOpacity,
   useWindowDimensions,
   View,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 import CustomAlert from '@/components/CustomAlert';
 import { IconSymbol } from '@/components/ui/IconSymbol';

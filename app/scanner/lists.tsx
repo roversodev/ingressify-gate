@@ -106,6 +106,7 @@ export default function EventListsScreen() {
                 <TouchableOpacity 
                     onPress={() => router.back()} 
                     className="w-10 h-10 justify-center items-center -ml-2"
+                    activeOpacity={1}
                 >
                     <IconSymbol name="arrow.left" size={headerIconSize} color="#E65CFF" />
                 </TouchableOpacity>
@@ -150,6 +151,7 @@ export default function EventListsScreen() {
                                     }`}
                                     onPress={() => handleListSelect(item.validationUrl)}
                                     disabled={!item.validationUrl}
+                                    activeOpacity={1}
                                 >
                                     <View className="flex-row items-center justify-between">
                                         <View className="flex-1 mr-3">

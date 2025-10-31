@@ -259,6 +259,7 @@ export default function SearchTicketsScreen() {
                 {!isUsed && !isInvalid && (
                     <TouchableOpacity
                         className="bg-primary rounded-lg"
+                        activeOpacity={1}
                         onPress={() => handleValidateTicket(item._id)}
                         style={{
                             paddingVertical: isTablet ? 10 : 8,
@@ -289,7 +290,7 @@ export default function SearchTicketsScreen() {
                 className="flex-row items-center bg-backgroundDark border-b border-gray-700"
                 style={{ paddingHorizontal: spacing, paddingVertical: isTablet ? 14 : 12 }}
             >
-                <TouchableOpacity onPress={() => router.back()} className="mr-4" hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
+                <TouchableOpacity onPress={() => router.back()} className="mr-4" hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }} activeOpacity={1}>
                     <Text className="text-primary" style={{ fontSize: subFont }}>← Voltar</Text>
                 </TouchableOpacity>
                 <Text className="text-white font-semibold flex-1" style={{ fontSize: headerFont }}>
@@ -314,6 +315,7 @@ export default function SearchTicketsScreen() {
                         className={`flex-1 items-center border-b-2 ${searchType === 'email' ? 'border-b-primary' : 'border-b-transparent'}`}
                         onPress={() => setSearchType('email')}
                         style={{ paddingVertical: isTablet ? 10 : 8 }}
+                        activeOpacity={1}
                     >
                         <Text
                             style={{ fontSize: inputFont }}
@@ -327,6 +329,7 @@ export default function SearchTicketsScreen() {
                         className={`flex-1 items-center border-b-2 ${searchType === 'cpf' ? 'border-b-primary' : 'border-b-transparent'}`}
                         onPress={() => setSearchType('cpf')}
                         style={{ paddingVertical: isTablet ? 10 : 8 }}
+                        activeOpacity={1}
                     >
                         <Text
                             style={{ fontSize: inputFont }}
@@ -358,6 +361,7 @@ export default function SearchTicketsScreen() {
                     className="bg-primary rounded-lg items-center"
                     onPress={handleSearch}
                     disabled={isSearching}
+                    activeOpacity={1}
                     style={{
                         paddingVertical: isTablet ? 14 : 12,
                     }}

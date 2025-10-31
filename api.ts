@@ -52,6 +52,12 @@ export type PublicApiType = {
       { couponId: Id<"coupons"> },
       any
     >;
+    incrementCouponUsage: FunctionReference<
+      "mutation",
+      "public",
+      { couponCode: string; eventId: Id<"events"> },
+      any
+    >;
     getEventCoupons: FunctionReference<
       "query",
       "public",
@@ -97,17 +103,17 @@ export type PublicApiType = {
       { eventId: Id<"events"> },
       any
     >;
-    getBySlug: FunctionReference<"query", "public", { slug: string }, any>;
-    purchaseMultipleTickets: FunctionReference<
-      "mutation",
+    getEventBasicInfo: FunctionReference<
+      "query",
       "public",
-      {
-        eventId: Id<"events">;
-        paymentInfo: { paymentIntentId: string; totalAmount: number };
-        quantity: number;
-        ticketTypeId: Id<"ticketTypes">;
-        userId: string;
-      },
+      { eventId: Id<"events"> },
+      any
+    >;
+    getBySlug: FunctionReference<"query", "public", { slug: string }, any>;
+    getEventMetrics: FunctionReference<
+      "query",
+      "public",
+      { eventId: Id<"events"> },
       any
     >;
     getUserTickets: FunctionReference<
@@ -129,6 +135,24 @@ export type PublicApiType = {
       any
     >;
     getEventAvailability: FunctionReference<
+      "query",
+      "public",
+      { eventId: Id<"events"> },
+      any
+    >;
+    getEventAvailabilityValidar: FunctionReference<
+      "query",
+      "public",
+      { eventId: Id<"events"> },
+      any
+    >;
+    getEventAvailabilityEventPage: FunctionReference<
+      "query",
+      "public",
+      { eventId: Id<"events"> },
+      any
+    >;
+    getEventAvailabilityTotalAvailable: FunctionReference<
       "query",
       "public",
       { eventId: Id<"events"> },
@@ -204,7 +228,6 @@ export type PublicApiType = {
         eventId: Id<"events">;
         paymentIntentId: string;
         promoterCode?: string;
-        stripeSessionId: string;
         ticketSelections: Array<{
           quantity: number;
           ticketTypeId: Id<"ticketTypes">;
@@ -245,10 +268,10 @@ export type PublicApiType = {
       { eventId: Id<"events"> },
       any
     >;
-    getEventTicketHolders: FunctionReference<
+    getEventTicketHoldersOptimized: FunctionReference<
       "query",
       "public",
-      { eventId: Id<"events"> },
+      { eventId: Id<"events">; limit?: number },
       any
     >;
     purchaseTicketsWithFreePay: FunctionReference<
@@ -290,6 +313,12 @@ export type PublicApiType = {
       { organizationId: Id<"organizations"> },
       any
     >;
+    getOrganizationEventsBasic: FunctionReference<
+      "query",
+      "public",
+      { organizationId: Id<"organizations"> },
+      any
+    >;
     getPublishedEvents: FunctionReference<
       "query",
       "public",
@@ -306,6 +335,101 @@ export type PublicApiType = {
       "query",
       "public",
       { userId: string },
+      any
+    >;
+    updateEventSettings: FunctionReference<
+      "mutation",
+      "public",
+      {
+        allowTicketTransfers?: boolean;
+        customScripts?: {
+          googleAnalytics?: string;
+          googleTagManager?: string;
+          metaPixel?: string;
+        };
+        eventId: Id<"events">;
+        isPublicOnHomepage?: boolean;
+        userId: string;
+      },
+      any
+    >;
+    getEventCourtesyStats: FunctionReference<
+      "query",
+      "public",
+      { eventId: Id<"events"> },
+      any
+    >;
+    getEventCourtesyDetails: FunctionReference<
+      "query",
+      "public",
+      { eventId: Id<"events"> },
+      any
+    >;
+    getEventPageData: FunctionReference<
+      "query",
+      "public",
+      { eventId: Id<"events"> },
+      any
+    >;
+    getEventCheckoutData: FunctionReference<
+      "query",
+      "public",
+      { eventId: Id<"events"> },
+      any
+    >;
+    getEventBasicData: FunctionReference<
+      "query",
+      "public",
+      { eventId: Id<"events"> },
+      any
+    >;
+    getEventConfigData: FunctionReference<
+      "query",
+      "public",
+      { eventId: Id<"events"> },
+      any
+    >;
+    getEventEditData: FunctionReference<
+      "query",
+      "public",
+      { eventId: Id<"events"> },
+      any
+    >;
+    getEventEmailData: FunctionReference<
+      "query",
+      "public",
+      { eventId: Id<"events"> },
+      any
+    >;
+    getEventName: FunctionReference<
+      "query",
+      "public",
+      { eventId: Id<"events"> },
+      any
+    >;
+    getEventStartLocName: FunctionReference<
+      "query",
+      "public",
+      { eventId: Id<"events"> },
+      any
+    >;
+    getEventTicketShow: FunctionReference<
+      "query",
+      "public",
+      { eventId: Id<"events"> },
+      any
+    >;
+    getOnFireEvents: FunctionReference<"query", "public", any, any>;
+    getPastEventsWithPagination: FunctionReference<
+      "query",
+      "public",
+      { limit: number; page: number },
+      any
+    >;
+    getUpcomingEventsAll: FunctionReference<
+      "query",
+      "public",
+      Record<string, never>,
       any
     >;
   };
@@ -333,7 +457,10 @@ export type PublicApiType = {
           key: string;
           keyType: "cpf" | "cnpj" | "email" | "phone" | "random";
         }>;
-        responsibleDocument: string;
+        recipientCode?: string;
+        recipientId?: string;
+        recipientType?: "PF" | "PJ";
+        responsibleDocument?: string;
         responsibleName: string;
         userId: string;
       },
@@ -360,6 +487,12 @@ export type PublicApiType = {
       "mutation",
       "public",
       { inviteToken: string; userId: string },
+      any
+    >;
+    checkInviteStatus: FunctionReference<
+      "query",
+      "public",
+      { inviteToken: string },
       any
     >;
     checkUserHasOrganization: FunctionReference<
@@ -439,6 +572,9 @@ export type PublicApiType = {
           key: string;
           keyType: "cpf" | "cnpj" | "email" | "phone" | "random";
         }>;
+        recipientCode?: string;
+        recipientId?: string;
+        recipientType?: "PF" | "PJ";
         responsibleDocument: string;
         responsibleName: string;
         userId: string;
@@ -450,6 +586,7 @@ export type PublicApiType = {
       "public",
       {
         amount: number;
+        eventId?: Id<"events">;
         organizationId: Id<"organizations">;
         pixKeyIndex: number;
         userId: string;
@@ -459,13 +596,71 @@ export type PublicApiType = {
     getOrganizationWithdrawals: FunctionReference<
       "query",
       "public",
-      { organizationId: Id<"organizations">; userId: string },
+      {
+        eventId?: Id<"events">;
+        organizationId: Id<"organizations">;
+        userId: string;
+      },
       any
     >;
     getOrganizationDemographicStats: FunctionReference<
       "query",
       "public",
       { organizationId: Id<"organizations">; userId: string },
+      any
+    >;
+    getOrganizationBuyersData: FunctionReference<
+      "query",
+      "public",
+      { organizationId: Id<"organizations">; userId: string },
+      any
+    >;
+    getOrganizationTransactionsPaginated: FunctionReference<
+      "query",
+      "public",
+      {
+        eventId?: Id<"events">;
+        limit: number;
+        organizationId: Id<"organizations">;
+        page: number;
+        paymentMethod?: string;
+        status?: string;
+        userId: string;
+      },
+      any
+    >;
+    getOrganizationFinancialSummary: FunctionReference<
+      "query",
+      "public",
+      {
+        eventId?: Id<"events">;
+        organizationId: Id<"organizations">;
+        userId: string;
+      },
+      any
+    >;
+    getOrganizationWithdrawalsPaginated: FunctionReference<
+      "query",
+      "public",
+      {
+        eventId?: Id<"events">;
+        limit: number;
+        organizationId: Id<"organizations">;
+        page: number;
+        userId: string;
+      },
+      any
+    >;
+    getOrganizationCardTransactionsForReleasesPaginated: FunctionReference<
+      "query",
+      "public",
+      {
+        limit: number;
+        organizationId: Id<"organizations">;
+        page: number;
+        status?: string;
+        userId: string;
+      },
       any
     >;
   };
@@ -645,6 +840,12 @@ export type PublicApiType = {
       { storageId: Id<"_storage"> },
       any
     >;
+    getUrlOnce: FunctionReference<
+      "action",
+      "public",
+      { storageId: Id<"_storage"> },
+      any
+    >;
     deleteImage: FunctionReference<
       "mutation",
       "public",
@@ -669,10 +870,20 @@ export type PublicApiType = {
       "mutation",
       "public",
       {
+        activationSettings?: {
+          activateAt?: number;
+          activationType: "manual" | "datetime" | "soldout" | "percentage";
+          deactivateAt?: number;
+          deactivationType?: "never" | "datetime" | "soldout";
+          enabled: boolean;
+          triggerPercentage?: number;
+          triggerTicketTypeId?: Id<"ticketTypes">;
+        };
         description?: string;
         eventId: Id<"events">;
         isActive?: boolean;
         isCourtesy?: boolean;
+        maxPerUser?: number;
         name: string;
         price: number;
         sortOrder: number;
@@ -690,9 +901,19 @@ export type PublicApiType = {
       "mutation",
       "public",
       {
+        activationSettings?: {
+          activateAt?: number;
+          activationType: "manual" | "datetime" | "soldout" | "percentage";
+          deactivateAt?: number;
+          deactivationType?: "never" | "datetime" | "soldout";
+          enabled: boolean;
+          triggerPercentage?: number;
+          triggerTicketTypeId?: Id<"ticketTypes">;
+        };
         description?: string;
         isActive?: boolean;
         isCourtesy?: boolean;
+        maxPerUser?: number;
         name: string;
         price: number;
         sortOrder: number;
@@ -713,10 +934,71 @@ export type PublicApiType = {
       { eventId: Id<"events"> },
       any
     >;
+    getEventCourtesyTicketTypes: FunctionReference<
+      "query",
+      "public",
+      { eventId: Id<"events"> },
+      any
+    >;
     getById: FunctionReference<
       "query",
       "public",
       { ticketTypeId: Id<"ticketTypes"> },
+      any
+    >;
+    checkUserPurchaseLimit: FunctionReference<
+      "query",
+      "public",
+      {
+        requestedQuantity: number;
+        ticketTypeId: Id<"ticketTypes">;
+        userId: string;
+      },
+      any
+    >;
+    getTicketTypesForManagement: FunctionReference<
+      "query",
+      "public",
+      { eventId: Id<"events"> },
+      any
+    >;
+    upsertTicketType: FunctionReference<
+      "mutation",
+      "public",
+      {
+        activationSettings?: {
+          activateAt?: number;
+          activationType: "manual" | "datetime" | "soldout" | "percentage";
+          deactivateAt?: number;
+          deactivationType?: "never" | "datetime" | "soldout";
+          enabled: boolean;
+          triggerPercentage?: number;
+          triggerTicketTypeId?: Id<"ticketTypes">;
+        };
+        description?: string;
+        eventId: Id<"events">;
+        isActive?: boolean;
+        isCourtesy?: boolean;
+        maxPerUser?: number;
+        name: string;
+        price: number;
+        sortOrder?: number;
+        ticketTypeId?: Id<"ticketTypes">;
+        totalQuantity: number;
+      },
+      any
+    >;
+    validateTicketsForCheckout: FunctionReference<
+      "query",
+      "public",
+      {
+        eventId: Id<"events">;
+        ticketSelections: Array<{
+          quantity: number;
+          ticketTypeId: Id<"ticketTypes">;
+        }>;
+        userId?: string;
+      },
       any
     >;
   };
@@ -758,18 +1040,6 @@ export type PublicApiType = {
       "mutation",
       "public",
       { eventId: Id<"events">; ticketId: Id<"tickets">; userId: string },
-      any
-    >;
-    getTicketsByStripeSession: FunctionReference<
-      "query",
-      "public",
-      { stripeSessionId: string },
-      any
-    >;
-    getTicketsByStripeSessionWithDetails: FunctionReference<
-      "query",
-      "public",
-      { stripeSessionId: string },
       any
     >;
     getTicketsByIds: FunctionReference<
@@ -886,6 +1156,18 @@ export type PublicApiType = {
       { transferRequestId: Id<"transferRequests"> },
       any
     >;
+    acceptTransferSimple: FunctionReference<
+      "mutation",
+      "public",
+      { toUserId: string; transferRequestId: Id<"transferRequests"> },
+      any
+    >;
+    rejectTransfer: FunctionReference<
+      "mutation",
+      "public",
+      { transferRequestId: Id<"transferRequests"> },
+      any
+    >;
     getUserTransfers: FunctionReference<
       "query",
       "public",
@@ -902,18 +1184,6 @@ export type PublicApiType = {
       "query",
       "public",
       { userEmail: string },
-      any
-    >;
-    acceptTransferSimple: FunctionReference<
-      "mutation",
-      "public",
-      { toUserId: string; transferRequestId: Id<"transferRequests"> },
-      any
-    >;
-    rejectTransfer: FunctionReference<
-      "mutation",
-      "public",
-      { transferRequestId: Id<"transferRequests"> },
       any
     >;
     getPendingTransferForTicket: FunctionReference<
@@ -950,6 +1220,12 @@ export type PublicApiType = {
     >;
     getUserById: FunctionReference<"query", "public", { userId: string }, any>;
     checkUserExistsByEmail: FunctionReference<
+      "query",
+      "public",
+      { email: string },
+      any
+    >;
+    getUserInfoByEmail: FunctionReference<
       "query",
       "public",
       { email: string },
@@ -1014,6 +1290,12 @@ export type PublicApiType = {
       { userId: string },
       any
     >;
+    getUsersInfoByEmails: FunctionReference<
+      "query",
+      "public",
+      { emails: Array<string> },
+      any
+    >;
   };
   validators: {
     inviteValidator: FunctionReference<
@@ -1050,6 +1332,12 @@ export type PublicApiType = {
       "query",
       "public",
       { userId: string },
+      any
+    >;
+    getValidatorInvitationsByEmail: FunctionReference<
+      "query",
+      "public",
+      { email: string },
       any
     >;
   };
@@ -1290,7 +1578,7 @@ export type PublicApiType = {
       {
         eventId?: Id<"events">;
         limit?: number;
-        status?: "valid" | "used" | "refunded" | "cancelled";
+        status?: "valid" | "used" | "refunded" | "cancelled" | "transfered";
         userId: string;
       },
       any
@@ -1299,7 +1587,7 @@ export type PublicApiType = {
       "mutation",
       "public",
       {
-        newStatus: "valid" | "used" | "refunded" | "cancelled";
+        newStatus: "valid" | "used" | "refunded" | "cancelled" | "transfered";
         reason?: string;
         ticketId: Id<"tickets">;
         userId: string;
@@ -1333,7 +1621,43 @@ export type PublicApiType = {
     getOrganizationCompletedWithdrawals: FunctionReference<
       "mutation",
       "public",
-      { organizationId: Id<"organizations"> },
+      { eventId?: Id<"events">; organizationId: Id<"organizations"> },
+      any
+    >;
+    getOrganizationTransactionsPaginated: FunctionReference<
+      "query",
+      "public",
+      {
+        eventId?: Id<"events">;
+        limit?: number;
+        organizationId: Id<"organizations">;
+        page?: number;
+        userId: string;
+      },
+      any
+    >;
+    getAllTransactionsPaginated: FunctionReference<
+      "query",
+      "public",
+      { eventId?: Id<"events">; limit?: number; page?: number; userId: string },
+      any
+    >;
+    getCreditCardInstallmentStats: FunctionReference<
+      "query",
+      "public",
+      { endDate?: number; startDate?: number; userId: string },
+      any
+    >;
+    getInstallmentDistributionStats: FunctionReference<
+      "query",
+      "public",
+      { endDate?: number; startDate?: number; userId: string },
+      any
+    >;
+    getEventTransactionsMutation: FunctionReference<
+      "mutation",
+      "public",
+      { eventId: Id<"events">; userId: string },
       any
     >;
   };
@@ -1519,6 +1843,69 @@ export type PublicApiType = {
       "mutation",
       "public",
       { cardId: string },
+      any
+    >;
+  };
+  eventFeeSettings: {
+    getEventFeeSettings: FunctionReference<
+      "query",
+      "public",
+      { eventId: Id<"events"> },
+      any
+    >;
+    getAllEventFeeSettingsByOrganization: FunctionReference<
+      "query",
+      "public",
+      { organizationId: Id<"organizations"> },
+      any
+    >;
+    upsertEventFeeSettings: FunctionReference<
+      "mutation",
+      "public",
+      {
+        cardFeePercentage?: number;
+        eventId: Id<"events">;
+        pixFeePercentage?: number;
+        useCustomFees: boolean;
+        userId: string;
+      },
+      any
+    >;
+    removeEventFeeSettings: FunctionReference<
+      "mutation",
+      "public",
+      { eventId: Id<"events"> },
+      any
+    >;
+  };
+  ticketActivation: {
+    processAutomaticActivations: FunctionReference<
+      "mutation",
+      "public",
+      { eventId: Id<"events"> },
+      any
+    >;
+    updateActivationSettings: FunctionReference<
+      "mutation",
+      "public",
+      {
+        settings?: {
+          activateAt?: number;
+          activationType: "manual" | "datetime" | "soldout" | "percentage";
+          deactivateAt?: number;
+          deactivationType?: "never" | "datetime" | "soldout";
+          enabled: boolean;
+          triggerPercentage?: number;
+          triggerTicketTypeId?: Id<"ticketTypes">;
+        };
+        ticketTypeId: Id<"ticketTypes">;
+      },
+      any
+    >;
+    processEventActivationsAfterPurchase: FunctionReference<
+      "mutation",
+      "public",
+      { eventId: Id<"events"> },
       any
     >;
   };

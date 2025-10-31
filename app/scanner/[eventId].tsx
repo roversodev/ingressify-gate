@@ -74,6 +74,9 @@ export default function ScannerScreen() {
   const lastScannedRef = useRef<string>('');
   const lastScannedTimeRef = useRef<number>(0);
   const { user } = useUser();
+  
+  // NOVO: Estado para controlar se a câmera deve ser pausada
+  const [cameraActive, setCameraActive] = useState(true);
 
   // Estado para o alerta personalizado - MOVIDO PARA O TOPO
   const [alert, setAlert] = useState<{
@@ -142,19 +145,41 @@ export default function ScannerScreen() {
     }
   }, [permission, requestPermission]);
 
-  // Função para mostrar alerta personalizado - DEFINIDA APÓS TODOS OS HOOKS
+  // Função para mostrar alerta personalizado - ATUALIZADA
   const showAlert = (
     type: 'success' | 'warning' | 'error' | 'info',
     title: string,
     message: string,
     actions: Array<{ text: string; onPress: () => void }> = []
   ) => {
+    // Pausar a câmera quando mostrar o alerta
+    setCameraActive(false);
+    
+    // Modificar as ações para reativar a câmera
+    const modifiedActions = actions.map(action => ({
+      ...action,
+      onPress: () => {
+        action.onPress();
+        // Reativar a câmera após fechar o alerta
+        setTimeout(() => setCameraActive(true), 100);
+      }
+    }));
+
     setAlert({
       visible: true,
       type,
       title,
       message,
-      actions
+      actions: modifiedActions.length > 0 ? modifiedActions : [{
+        text: 'OK',
+        onPress: () => {
+          setScanned(false);
+          setIsValidating(false);
+          lastScannedRef.current = '';
+          // Reativar a câmera após fechar o alerta
+          setTimeout(() => setCameraActive(true), 100);
+        }
+      }]
     });
   };
 
@@ -368,7 +393,11 @@ export default function ScannerScreen() {
           title={alert.title}
           message={alert.message}
           actions={alert.actions}
-          onClose={() => setAlert(prev => ({ ...prev, visible: false }))}
+          onClose={() => {
+            setAlert(prev => ({ ...prev, visible: false }));
+            // Reativar a câmera quando fechar o alerta
+            setTimeout(() => setCameraActive(true), 100);
+          }}
         />
 
         <View className='bg-background flex-row items-center py-4 px-3'>
@@ -403,16 +432,21 @@ export default function ScannerScreen() {
 
         {/* Container relativo para sobrepor UI por cima da câmera */}
         <View style={styles.cameraContainer}>
-          {/* NOVO: só renderiza a câmera quando a tela está focada */}
-          {isFocused && (
+          {/* ATUALIZADO: usar cameraActive em vez de apenas isFocused */}
+          {isFocused && cameraActive && (
             <CameraView
               style={StyleSheet.absoluteFillObject}
               facing={facing}
               onBarcodeScanned={scanned ? undefined : handleBarcodeScanned}
               barcodeScannerSettings={{
-                barcodeTypes: ['qr'], // reduzimos para estabilizar; depois podemos reativar 'pdf417'
+                barcodeTypes: ['qr'],
               }}
             />
+          )}
+
+          {/* NOVO: Mostrar fundo preto quando a câmera está pausada */}
+          {(!isFocused || !cameraActive) && (
+            <View style={[StyleSheet.absoluteFillObject, { backgroundColor: '#000' }]} />
           )}
 
           {/* Overlay */}

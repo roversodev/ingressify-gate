@@ -144,7 +144,7 @@ export default function ListValidationScreen() {
         return (
             <SafeAreaView className="flex-1 bg-background">
                 <View className="flex-row items-center justify-between px-4 py-3 border-b border-gray-700">
-                    <TouchableOpacity onPress={() => router.back()} className="w-10 h-10 justify-center items-center">
+                    <TouchableOpacity onPress={() => router.back()} className="w-10 h-10 justify-center items-center" activeOpacity={1}>
                         <IconSymbol name="arrow.left" size={24} color="#E65CFF" />
                     </TouchableOpacity>
                     <Text className="text-lg font-semibold text-white">Validação de Lista</Text>
@@ -159,9 +159,10 @@ export default function ListValidationScreen() {
                         <Text className="text-textSecondary text-center mb-6 leading-5">
                             A URL de validação é inválida ou está ausente.
                         </Text>
-                        <TouchableOpacity 
-                            onPress={() => router.push('/')} 
+                        <TouchableOpacity
+                            onPress={() => router.push('/')}
                             className="bg-primary px-6 py-3 rounded-xl w-full"
+                            activeOpacity={1}
                         >
                             <Text className="text-white text-center font-semibold">Voltar ao início</Text>
                         </TouchableOpacity>
@@ -185,7 +186,7 @@ export default function ListValidationScreen() {
         return (
             <SafeAreaView className="flex-1 bg-background">
                 <View className="flex-row items-center justify-between px-4 py-3 border-b border-gray-700">
-                    <TouchableOpacity onPress={() => router.back()} className="w-10 h-10 justify-center items-center">
+                    <TouchableOpacity onPress={() => router.back()} className="w-10 h-10 justify-center items-center" activeOpacity={1}>
                         <IconSymbol name="arrow.left" size={24} color="#E65CFF" />
                     </TouchableOpacity>
                     <Text className="text-lg font-semibold text-white">Validação de Lista</Text>
@@ -200,9 +201,10 @@ export default function ListValidationScreen() {
                         <Text className="text-textSecondary text-center mb-6 leading-5">
                             A página de validação que você está procurando não existe ou foi removida.
                         </Text>
-                        <TouchableOpacity 
-                            onPress={() => router.push('/')} 
+                        <TouchableOpacity
+                            onPress={() => router.push('/')}
                             className="bg-primary px-6 py-3 rounded-xl w-full"
+                            activeOpacity={1}
                         >
                             <Text className="text-white text-center font-semibold">Voltar ao início</Text>
                         </TouchableOpacity>
@@ -216,7 +218,7 @@ export default function ListValidationScreen() {
         return (
             <SafeAreaView className="flex-1 bg-background">
                 <View className="flex-row items-center justify-between px-4 py-3 border-b border-gray-700">
-                    <TouchableOpacity onPress={() => router.back()} className="w-10 h-10 justify-center items-center">
+                    <TouchableOpacity onPress={() => router.back()} className="w-10 h-10 justify-center items-center" activeOpacity={1} >
                         <IconSymbol name="arrow.left" size={24} color="#E65CFF" />
                     </TouchableOpacity>
                     <Text className="text-lg font-semibold text-white">Validação de Lista</Text>
@@ -231,9 +233,10 @@ export default function ListValidationScreen() {
                         <Text className="text-textSecondary text-center mb-6 leading-5">
                             Você precisa estar logado para validar participantes nesta lista.
                         </Text>
-                        <TouchableOpacity 
-                            onPress={() => router.push('/')} 
+                        <TouchableOpacity
+                            onPress={() => router.push('/')}
                             className="bg-primary px-6 py-3 rounded-xl w-full"
+                            activeOpacity={1}
                         >
                             <Text className="text-white text-center font-semibold">Fazer login</Text>
                         </TouchableOpacity>
@@ -248,7 +251,7 @@ export default function ListValidationScreen() {
         return (
             <SafeAreaView className="flex-1 bg-background">
                 <View className="flex-row items-center justify-between px-4 py-3 border-b border-gray-700">
-                    <TouchableOpacity onPress={() => router.back()} className="w-10 h-10 justify-center items-center">
+                    <TouchableOpacity onPress={() => router.back()} className="w-10 h-10 justify-center items-center" activeOpacity={1}>
                         <IconSymbol name="arrow.left" size={24} color="#E65CFF" />
                     </TouchableOpacity>
                     <Text className="text-lg font-semibold text-white">Validação de Lista</Text>
@@ -263,8 +266,9 @@ export default function ListValidationScreen() {
                         <Text className="text-textSecondary text-center mb-6 leading-5">
                             {validatorPermission.message || "Você não tem permissão para acessar esta página de validação."}
                         </Text>
-                        <TouchableOpacity 
-                            onPress={() => router.push('/')} 
+                        <TouchableOpacity
+                            activeOpacity={1}
+                            onPress={() => router.push('/')}
                             className="bg-primary px-6 py-3 rounded-xl w-full"
                         >
                             <Text className="text-white text-center font-semibold">Voltar ao início</Text>
@@ -276,8 +280,8 @@ export default function ListValidationScreen() {
     }
 
     const filteredParticipants = listSubscriptions?.filter((sub: { userId: string; userName: string; }) => {
-        return sub.userId.toLowerCase().includes(searchTerm.toLowerCase()) || 
-               (sub.userName && sub.userName.toLowerCase().includes(searchTerm.toLowerCase()));
+        return sub.userId.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            (sub.userName && sub.userName.toLowerCase().includes(searchTerm.toLowerCase()));
     }) || [];
 
     const handleSearch = () => {
@@ -335,13 +339,13 @@ export default function ListValidationScreen() {
                         text: 'OK',
                         onPress: () => setAlert(prev => ({ ...prev, visible: false }))
                     }
-                ]} 
-                onClose={() => {}} 
+                ]}
+                onClose={() => { }}
             />
 
             {/* Header */}
             <View className="flex-row items-center justify-between px-4 py-3 border-b border-gray-700">
-                <TouchableOpacity onPress={() => router.back()} className="w-10 h-10 justify-center items-center">
+                <TouchableOpacity onPress={() => router.back()} className="w-10 h-10 justify-center items-center" activeOpacity={1}>
                     <IconSymbol name="arrow.left" size={headerIconSize} color="#E65CFF" />
                 </TouchableOpacity>
                 <Text className="text-lg font-semibold text-white" style={{ fontSize: headerTitleSize }}>
@@ -366,7 +370,7 @@ export default function ListValidationScreen() {
                             </Text>
                         </View>
                     </View>
-                    
+
                     {/* Estatísticas */}
                     <View className="flex-row justify-between pt-4 border-t border-gray-700">
                         <View className="items-center">
@@ -408,11 +412,11 @@ export default function ListValidationScreen() {
                             style={{ fontSize: inputFontSize }}
                         />
                     </View>
-                    <TouchableOpacity 
-                        className={`rounded-xl items-center justify-center shadow-sm ${
-                            isSearching ? 'bg-primary/50' : 'bg-primary'
-                        }`}
-                        onPress={handleSearch} 
+                    <TouchableOpacity
+                        className={`rounded-xl items-center justify-center shadow-sm ${isSearching ? 'bg-primary/50' : 'bg-primary'
+                            }`}
+                        onPress={handleSearch}
+                        activeOpacity={1}
                         disabled={isSearching}
                         style={{ width: searchButtonSize, height: searchButtonSize }}
                     >
@@ -431,10 +435,10 @@ export default function ListValidationScreen() {
                         keyExtractor={(item) => item._id}
                         showsVerticalScrollIndicator={false}
                         renderItem={({ item, index }) => (
-                            <TouchableOpacity 
-                                className={`flex-row justify-between items-center p-4 ${
-                                    index !== filteredParticipants.length - 1 ? 'border-b border-gray-700' : ''
-                                } active:bg-gray-700/30`}
+                            <TouchableOpacity
+                                activeOpacity={1}
+                                className={`flex-row justify-between items-center p-4 ${index !== filteredParticipants.length - 1 ? 'border-b border-gray-700' : ''
+                                    } active:bg-gray-700/30`}
                                 onPress={() => setSelectedParticipant(item)}
                             >
                                 <View className="flex-1 mr-3">
@@ -445,7 +449,7 @@ export default function ListValidationScreen() {
                                         {new Date(item.subscribedAt).toLocaleString('pt-BR')}
                                     </Text>
                                 </View>
-                                
+
                                 {item.checkedIn ? (
                                     <View className="flex-row items-center bg-green-500/10 px-3 py-2 rounded-lg">
                                         <IconSymbol name="checkmark.circle.fill" size={badgeIconSize} color="#10B981" />
@@ -460,6 +464,7 @@ export default function ListValidationScreen() {
                                             e.stopPropagation();
                                             handleCheckIn(item.userId);
                                         }}
+                                        pressOpacity={1}
                                     >
                                         <Text className="text-white text-sm font-semibold" style={{ fontSize: actionButtonFontSize }}>
                                             Validar
@@ -499,14 +504,15 @@ export default function ListValidationScreen() {
                                         Detalhes do Participante
                                     </Text>
                                 </View>
-                                <TouchableOpacity 
+                                <TouchableOpacity
                                     onPress={() => setSelectedParticipant(null)}
                                     className="w-8 h-8 items-center justify-center"
+                                    activeOpacity={1}
                                 >
                                     <IconSymbol name="xmark" size={isTablet ? 22 : 20} color="#6B7280" />
                                 </TouchableOpacity>
                             </View>
-                            
+
                             <View className="space-y-4">
                                 <View>
                                     <Text className="text-textSecondary text-sm mb-1">Nome/ID do Participante</Text>
@@ -514,14 +520,14 @@ export default function ListValidationScreen() {
                                         {selectedParticipant.userName || selectedParticipant.userId}
                                     </Text>
                                 </View>
-                                
+
                                 <View>
                                     <Text className="text-textSecondary text-sm mb-1">Data de Inscrição</Text>
                                     <Text className="text-white text-base">
                                         {new Date(selectedParticipant.subscribedAt).toLocaleString('pt-BR')}
                                     </Text>
                                 </View>
-                                
+
                                 <View>
                                     <Text className="text-textSecondary text-sm mb-2">Status</Text>
                                     <View className="flex-row items-center">
@@ -531,8 +537,8 @@ export default function ListValidationScreen() {
                                                 <View>
                                                     <Text className="text-green-500 font-medium">Validado</Text>
                                                     <Text className="text-textSecondary text-sm">
-                                                        {selectedParticipant.checkedInAt ? 
-                                                            `em ${new Date(selectedParticipant.checkedInAt).toLocaleString('pt-BR')}` : 
+                                                        {selectedParticipant.checkedInAt ?
+                                                            `em ${new Date(selectedParticipant.checkedInAt).toLocaleString('pt-BR')}` :
                                                             'Data não disponível'
                                                         }
                                                     </Text>
@@ -548,9 +554,10 @@ export default function ListValidationScreen() {
                                 </View>
 
                                 {!selectedParticipant.checkedIn && (
-                                    <TouchableOpacity 
+                                    <TouchableOpacity
                                         className="bg-primary py-4 rounded-xl mt-4 shadow-sm active:bg-primary/80"
                                         onPress={() => handleCheckIn(selectedParticipant.userId)}
+                                        activeOpacity={1}
                                     >
                                         <Text className="text-white text-center font-bold text-base">
                                             Validar Participante

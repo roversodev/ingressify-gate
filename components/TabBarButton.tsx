@@ -48,6 +48,7 @@ const TabBarButton: React.FC<TabBarButtonProps> = ({ onPress, onLongPress, isFoc
             onPress={onPress} 
             onLongPress={onLongPress} 
             style={styles.tabbarItem}
+            pressOpacity={1}
         >
             <Animated.View style={animatedIconStyle}>
                 <IconComponent color={isFocused ? '#FFFFFF' : '#A3A3A3'} style={{color: isFocused ? '#FFFFFF' : '#A3A3A3'}} />

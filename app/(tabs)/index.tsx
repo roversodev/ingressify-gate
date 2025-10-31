@@ -1,16 +1,19 @@
 import { api } from '@/api';
 import { HapticTab } from '@/components/HapticTab';
+import ValidatorInviteModal from '@/components/ValidatorInviteModal';
+import { usePendingInvites } from '@/hooks/usePendingInvites';
 import { useUser } from '@clerk/clerk-expo';
 import { useQuery } from 'convex/react';
 import { type GenericId as Id } from "convex/values";
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
-import React from 'react';
+import React, { useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
   RefreshControl,
   Text,
+  TouchableOpacity,
   View,
   useWindowDimensions
 } from 'react-native';
@@ -68,6 +71,7 @@ function EventItem({ event, onPress }: { event: any, onPress: () => void }) {
       className="bg-backgroundCard rounded-xl p-5 mb-4 border border-gray-800/30"
       onPress={onPress}
       style={{ flex: 1 }}
+      pressOpacity={1}
     >
       {/* Imagem do evento */}
       {imageUrl && (
@@ -143,6 +147,17 @@ export default function EventsScreen() {
   const containerPaddingH = isTablet ? 24 : 20;
   const bottomPadding = isTablet ? (isLandscape ? 120 : 140) : 100;
 
+    // Hook para gerenciar convites pendentes
+  const { 
+    pendingInvites, 
+    hasPendingInvites, 
+    isLoading: invitesLoading 
+  } = usePendingInvites();
+  
+  // Estado para controlar o modal de convite
+  const [currentInvite, setCurrentInvite] = useState<any>(null);
+  const [showInviteModal, setShowInviteModal] = React.useState(false);
+
   // Buscar eventos que o usuário criou
   const sellerEvents = useQuery(
     api.events.getSellerEvents,
@@ -154,6 +169,27 @@ export default function EventsScreen() {
     api.validators.getEventsUserCanValidate,
     user?.id ? { userId: user.id } : "skip"
   );
+
+
+  // Função para abrir modal de convite
+  const handleOpenInvite = (invite: any) => {
+    setCurrentInvite(invite);
+    setShowInviteModal(true);
+  };
+
+  // Função para fechar modal de convite
+  const handleCloseInvite = () => {
+    setCurrentInvite(null);
+    setShowInviteModal(false);
+  };
+
+  // Mostrar automaticamente o primeiro convite pendente quando o usuário estiver logado
+  React.useEffect(() => {
+    if (user && hasPendingInvites && !showInviteModal && pendingInvites.length > 0) {
+      const firstInvite = pendingInvites[0];
+      handleOpenInvite(firstInvite);
+    }
+  }, [user, hasPendingInvites, showInviteModal, pendingInvites]);
   
   const onRefresh = React.useCallback(() => {
     setRefreshing(true);
@@ -234,6 +270,33 @@ export default function EventsScreen() {
 
   return (
     <View className="flex-1 bg-background pt-20">
+
+
+      {/* Convites Pendentes */}
+      {hasPendingInvites && (
+        <View className="mx-6 mb-4 p-4 bg-primary/10 border border-primary/20 rounded-lg">
+          <View className="flex-row items-center justify-between">
+            <View className="flex-1">
+              <Text className="text-primary font-semibold text-base">
+                Convite Pendente
+              </Text>
+              <Text className="text-gray-300 text-sm mt-1">
+                Você tem {pendingInvites.length} convite{pendingInvites.length > 1 ? 's' : ''} para validar eventos
+              </Text>
+            </View>
+            <TouchableOpacity
+              onPress={() => handleOpenInvite(pendingInvites[0])}
+              className="bg-primary px-4 py-2 rounded-lg"
+            >
+              <Text className="text-black font-semibold text-sm">
+                Ver Convite
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
+
       {/* Header */}
       <View className="px-6 pt-6 pb-4">
         <Text className="text-white text-2xl font-bold mb-1" style={{ fontSize: isTablet ? 28 : undefined }}>Eventos</Text>
@@ -266,6 +329,16 @@ export default function EventsScreen() {
         }}
         showsVerticalScrollIndicator={false}
       />
+
+
+      {/* Modal de Convite */}
+      {showInviteModal && currentInvite && (
+        <ValidatorInviteModal
+          invitation={currentInvite}
+          visible={showInviteModal}
+          onClose={handleCloseInvite}
+        />
+      )}
     </View>
   );
 }

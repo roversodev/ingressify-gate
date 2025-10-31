@@ -270,6 +270,7 @@ export default function SignInScreen() {
                   <HapticTab 
                     onPress={() => setShowPassword(!showPassword)}
                     className="p-1"
+                    pressOpacity={1}
                   >
                     <IconSymbol 
                       name={showPassword ? "eye.slash" : "eye"} 
@@ -287,6 +288,7 @@ export default function SignInScreen() {
                 }`}
                 onPress={onPressEmailSignIn}
                 disabled={isLoading}
+                pressOpacity={1}
               >
                 <View className="flex-row items-center justify-center">
                   {isLoading && (
@@ -336,6 +338,7 @@ export default function SignInScreen() {
                 }`}
                 onPress={onPressGoogleSignIn}
                 disabled={isGoogleLoading}
+                pressOpacity={1}
               >
                 <View className="flex-row items-center justify-center">
                   {isGoogleLoading ? (
@@ -355,7 +358,7 @@ export default function SignInScreen() {
             {/* Link de Cadastro */}
             <View className="flex-row justify-center items-center mb-6">
               <Text className="text-textSecondary text-sm">Não tem uma conta? </Text>
-              <TouchableOpacity onPress={navigateToSignUp} className="ml-1">
+              <TouchableOpacity onPress={navigateToSignUp} className="ml-1" activeOpacity={1}>
                 <Text className="text-primary font-semibold text-sm">Cadastre-se</Text>
               </TouchableOpacity>
             </View>

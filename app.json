@@ -2,7 +2,7 @@
   "expo": {
     "name": "Ingressify Gate",
     "slug": "ingressify-gate",
-    "version": "1.0.6",
+    "version": "1.0.7",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "ingressify-gate",
@@ -30,7 +30,7 @@
       "adaptiveIcon": {
         "foregroundImage": "./assets/icons/adaptive-icon.png",
         "monoChromeImage": "./assets/icons/adaptive-icon.png",
-        "backgroundColor": "#232323"
+        "backgroundColor": "#E65CFF"
       },
       "edgeToEdgeEnabled": true,
       "permissions": [

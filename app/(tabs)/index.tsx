@@ -1,5 +1,7 @@
 import { api } from '@/api';
 import { HapticTab } from '@/components/HapticTab';
+import Header from '@/components/Header';
+import MinimalEventCard from '@/components/MinimalEventCard';
 import ValidatorInviteModal from '@/components/ValidatorInviteModal';
 import { usePendingInvites } from '@/hooks/usePendingInvites';
 import { useUser } from '@clerk/clerk-expo';
@@ -139,15 +141,7 @@ export default function EventsScreen() {
   const router = useRouter();
   const [refreshing, setRefreshing] = React.useState(false);
 
-  // Responsividade na lista
-  const { width, height } = useWindowDimensions();
-  const isTablet = Math.min(width, height) >= 768;
-  const isLandscape = width > height;
-  const numColumns = isTablet ? 2 : 1;
-  const containerPaddingH = isTablet ? 24 : 20;
-  const bottomPadding = isTablet ? (isLandscape ? 120 : 140) : 100;
-
-    // Hook para gerenciar convites pendentes
+  // Hook para gerenciar convites pendentes
   const { 
     pendingInvites, 
     hasPendingInvites, 
@@ -157,6 +151,14 @@ export default function EventsScreen() {
   // Estado para controlar o modal de convite
   const [currentInvite, setCurrentInvite] = useState<any>(null);
   const [showInviteModal, setShowInviteModal] = React.useState(false);
+
+  // Responsividade na lista
+  const { width, height } = useWindowDimensions();
+  const isTablet = Math.min(width, height) >= 768;
+  const isLandscape = width > height;
+  const numColumns = isTablet ? 2 : 1;
+  const containerPaddingH = isTablet ? 24 : 20;
+  const bottomPadding = isTablet ? (isLandscape ? 120 : 140) : 100;
 
   // Buscar eventos que o usuário criou
   const sellerEvents = useQuery(
@@ -169,7 +171,11 @@ export default function EventsScreen() {
     api.validators.getEventsUserCanValidate,
     user?.id ? { userId: user.id } : "skip"
   );
-
+  
+  const onRefresh = React.useCallback(() => {
+    setRefreshing(true);
+    setTimeout(() => setRefreshing(false), 1000);
+  }, []);
 
   // Função para abrir modal de convite
   const handleOpenInvite = (invite: any) => {
@@ -190,11 +196,6 @@ export default function EventsScreen() {
       handleOpenInvite(firstInvite);
     }
   }, [user, hasPendingInvites, showInviteModal, pendingInvites]);
-  
-  const onRefresh = React.useCallback(() => {
-    setRefreshing(true);
-    setTimeout(() => setRefreshing(false), 1000);
-  }, []);
 
   // Combinar os eventos do vendedor e os eventos que o usuário pode validar
   const formattedEvents = React.useMemo(() => {
@@ -202,10 +203,11 @@ export default function EventsScreen() {
     
     // Adicionar eventos do vendedor
     if (sellerEvents) {
-      const formatted = sellerEvents.map((event: { _id: any; name: any; eventStartDate: any; _creationTime: any; location: any; totalTickets: any; metrics: { validatedTickets: any; revenue: any; }; imageStorageId: any; }) => ({
+      const formatted = sellerEvents.map((event: any) => ({
         _id: event._id,
         name: event.name,
         date: event.eventStartDate || event._creationTime,
+        endDate: event.eventEndDate,
         location: event.location,
         totalTickets: event.totalTickets,
         validatedTickets: event.metrics?.validatedTickets || 0,
@@ -218,10 +220,11 @@ export default function EventsScreen() {
     
     // Adicionar eventos que o usuário pode validar
     if (validatorEvents) {
-      const formatted = validatorEvents.map((event: { _id: any; name: any; eventStartDate: any; _creationTime: any; location: any; totalTickets: any; metrics: { validatedTickets: any; revenue: any; }; imageStorageId: any; }) => ({
+      const formatted = validatorEvents.map((event: any) => ({
         _id: event._id,
         name: event.name,
         date: event.eventStartDate || event._creationTime,
+        endDate: event.eventEndDate,
         location: event.location,
         totalTickets: event.totalTickets,
         validatedTickets: event.metrics?.validatedTickets || 0,
@@ -238,13 +241,18 @@ export default function EventsScreen() {
       allEvents.push(...uniqueEvents);
     }
     
-    return allEvents;
+    // Sort by date descending (newest first)
+    return allEvents.sort((a, b) => {
+      const dateA = new Date(a.date).getTime();
+      const dateB = new Date(b.date).getTime();
+      return dateB - dateA;
+    });
   }, [sellerEvents, validatorEvents]);
 
   if (sellerEvents === undefined && validatorEvents === undefined) {
     return (
       <SafeAreaView className="flex-1 justify-center items-center bg-background">
-        <ActivityIndicator size="large" color="#E65CFF" />
+        <ActivityIndicator size="large" color="#E8B322" />
         <Text className="text-white text-base mt-4">Carregando eventos...</Text>
       </SafeAreaView>
     );
@@ -253,6 +261,7 @@ export default function EventsScreen() {
   if ((!sellerEvents || sellerEvents.length === 0) && (!validatorEvents || validatorEvents.length === 0)) {
     return (
       <SafeAreaView className="flex-1 justify-center items-center bg-background px-8">
+         <Header showLogo={true} />
         <View className="items-center">
           <View className="w-16 h-16 bg-gray-800 rounded-full items-center justify-center mb-6">
             <Text className="text-gray-400 text-2xl">📅</Text>
@@ -270,14 +279,14 @@ export default function EventsScreen() {
 
   return (
     <View className="flex-1 bg-background pt-20">
-
-
+      <Header showLogo={true} />
+      
       {/* Convites Pendentes */}
       {hasPendingInvites && (
-        <View className="mx-6 mb-4 p-4 bg-primary/10 border border-primary/20 rounded-lg">
+        <View className="mx-6 mb-4 p-4 bg-yellow-500/10 border border-yellow-500/20 rounded-lg">
           <View className="flex-row items-center justify-between">
             <View className="flex-1">
-              <Text className="text-primary font-semibold text-base">
+              <Text className="text-yellow-400 font-semibold text-base">
                 Convite Pendente
               </Text>
               <Text className="text-gray-300 text-sm mt-1">
@@ -286,7 +295,7 @@ export default function EventsScreen() {
             </View>
             <TouchableOpacity
               onPress={() => handleOpenInvite(pendingInvites[0])}
-              className="bg-primary px-4 py-2 rounded-lg"
+              className="bg-yellow-500 px-4 py-2 rounded-lg"
             >
               <Text className="text-black font-semibold text-sm">
                 Ver Convite
@@ -295,7 +304,6 @@ export default function EventsScreen() {
           </View>
         </View>
       )}
-
 
       {/* Header */}
       <View className="px-6 pt-6 pb-4">
@@ -307,18 +315,26 @@ export default function EventsScreen() {
       
       <FlatList
         data={formattedEvents}
-        renderItem={({ item }) => (
-          <EventItem 
-            event={item} 
-            onPress={() => router.push(`/scanner/${item._id}`)}
-          />
-        )}
+        renderItem={({ item }) => {
+          const isFinished = item.endDate && new Date(item.endDate).getTime() < Date.now();
+          
+          if (isFinished) {
+            return <MinimalEventCard event={item} />;
+          }
+
+          return (
+            <EventItem 
+              event={item} 
+              onPress={() => router.push(`/scanner/${item._id}`)}
+            />
+          );
+        }}
         keyExtractor={(item) => item._id}
         refreshControl={
           <RefreshControl 
             refreshing={refreshing} 
             onRefresh={onRefresh}
-            tintColor="#E65CFF"
+            tintColor="#E8B322"
           />
         }
         numColumns={numColumns}
@@ -329,7 +345,6 @@ export default function EventsScreen() {
         }}
         showsVerticalScrollIndicator={false}
       />
-
 
       {/* Modal de Convite */}
       {showInviteModal && currentInvite && (

@@ -177,12 +177,18 @@ function InitialLayout() {
   // Aguarda Clerk carregar para evitar flicker
   if (!isLoaded) return null;
 
-  // NOVO: permitir (tabs) e 'scanner' quando autenticado
-  const seg0 = segments[0];
-  const isInSignedInArea = seg0 === '(tabs)' || seg0 === 'scanner';
+  // NOVO: permitir (tabs), 'scanner', 'settings', 'dashboard' e 'finance' quando autenticado
+  const isInSignedInArea = segments.some(segment => 
+    segment === '(tabs)' || 
+    segment === 'scanner' || 
+    segment === 'settings' ||
+    segment === 'dashboard' ||
+    segment === 'finance' ||
+    segment === 'courtesy'
+  );
 
   // Redirecionos declarativos (sem usar router.*)
-  if (isSignedIn && !isInSignedInArea) {
+  if (isSignedIn && isLoaded && segments.length > 0 && !isInSignedInArea) {
     return <Redirect href="/(tabs)" />;
   }
   if (!isSignedIn && isInSignedInArea) {
@@ -190,6 +196,7 @@ function InitialLayout() {
   }
 
   return (
+    <ErrorBoundary>
       <Stack
         screenOptions={{
           headerShown: false}}
@@ -217,8 +224,15 @@ function InitialLayout() {
             headerShown: false,
           }}
         />
+        <Stack.Screen
+          name="settings"
+          options={{
+            headerShown: false,
+          }}
+        />
         <Stack.Screen name="+not-found" />
       </Stack>
+    </ErrorBoundary>
   );
 }
 
@@ -249,7 +263,9 @@ function AppContent() {
 
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <InitialLayout />
+      <ErrorBoundary>
+        <InitialLayout />
+      </ErrorBoundary>
       <StatusBar style="auto" />
     </ThemeProvider>
   );
@@ -267,13 +283,11 @@ export default Sentry.wrap(function RootLayout() {
 
   // Providers são inicializados IMEDIATAMENTE
   return (
-    <ErrorBoundary>
-      <ClerkProvider tokenCache={tokenCache} publishableKey={publishableKey}>
-        <ConvexProvider client={convex}>
-        <SyncUserWithConvex />
-          <AppContent />
-        </ConvexProvider>
-      </ClerkProvider>
-    </ErrorBoundary>
+    <ClerkProvider tokenCache={tokenCache} publishableKey={publishableKey}>
+      <ConvexProvider client={convex}>
+      <SyncUserWithConvex />
+        <AppContent />
+      </ConvexProvider>
+    </ClerkProvider>
   );
 });

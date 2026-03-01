@@ -179,6 +179,7 @@ export type PublicApiType = {
         description: string;
         eventEndDate: number;
         eventStartDate: number;
+        hasMultipleDays?: boolean;
         latitude?: number;
         location?: string;
         longitude?: number;
@@ -204,6 +205,7 @@ export type PublicApiType = {
         eventEndDate: number;
         eventId: Id<"events">;
         eventStartDate: number;
+        hasMultipleDays?: boolean;
         latitude?: number;
         location: string;
         longitude?: number;
@@ -663,6 +665,17 @@ export type PublicApiType = {
       },
       any
     >;
+    getEventTransactionsPaginated: FunctionReference<
+      "query",
+      "public",
+      {
+        eventId: Id<"events">;
+        limit?: number;
+        offset?: number;
+        userId: string;
+      },
+      any
+    >;
   };
   pendingEmails: {
     create: FunctionReference<
@@ -975,10 +988,18 @@ export type PublicApiType = {
           triggerPercentage?: number;
           triggerTicketTypeId?: Id<"ticketTypes">;
         };
+        buyXGetY?: {
+          buyQuantity: number;
+          enabled: boolean;
+          getQuantity: number;
+        };
+        dayId?: Id<"eventDays">;
         description?: string;
         eventId: Id<"events">;
         isActive?: boolean;
         isCourtesy?: boolean;
+        isPassport?: boolean;
+        lotId?: Id<"ticketLots">;
         maxPerUser?: number;
         name: string;
         price: number;
@@ -999,6 +1020,88 @@ export type PublicApiType = {
         }>;
         userId?: string;
       },
+      any
+    >;
+    getEventDaysAndLots: FunctionReference<
+      "query",
+      "public",
+      { eventId: Id<"events"> },
+      any
+    >;
+    createEventDay: FunctionReference<
+      "mutation",
+      "public",
+      {
+        date: number;
+        endTime?: number;
+        eventId: Id<"events">;
+        isActive?: boolean;
+        name?: string;
+        order?: number;
+        showOnSalesPage?: boolean;
+        startTime?: number;
+      },
+      any
+    >;
+    updateEventDay: FunctionReference<
+      "mutation",
+      "public",
+      {
+        date?: number;
+        dayId: Id<"eventDays">;
+        endTime?: number;
+        isActive?: boolean;
+        name?: string;
+        order?: number;
+        showOnSalesPage?: boolean;
+        startTime?: number;
+      },
+      any
+    >;
+    deleteEventDay: FunctionReference<
+      "mutation",
+      "public",
+      { dayId: Id<"eventDays"> },
+      any
+    >;
+    createTicketLot: FunctionReference<
+      "mutation",
+      "public",
+      {
+        closeAt?: number;
+        dayId?: Id<"eventDays">;
+        description?: string;
+        eventId: Id<"events">;
+        isActive?: boolean;
+        maxPerCpf?: number;
+        name: string;
+        openAt?: number;
+        order?: number;
+        showOnSalesPage?: boolean;
+      },
+      any
+    >;
+    updateTicketLot: FunctionReference<
+      "mutation",
+      "public",
+      {
+        closeAt?: number;
+        dayId?: Id<"eventDays">;
+        description?: string;
+        isActive?: boolean;
+        lotId: Id<"ticketLots">;
+        maxPerCpf?: number;
+        name?: string;
+        openAt?: number;
+        order?: number;
+        showOnSalesPage?: boolean;
+      },
+      any
+    >;
+    deleteTicketLot: FunctionReference<
+      "mutation",
+      "public",
+      { lotId: Id<"ticketLots"> },
       any
     >;
   };
@@ -1136,6 +1239,18 @@ export type PublicApiType = {
       { status: string; transactionId: string },
       any
     >;
+    updateMetadata: FunctionReference<
+      "mutation",
+      "public",
+      { metadata: any; transactionId: string },
+      any
+    >;
+    updateNetAmounts: FunctionReference<
+      "mutation",
+      "public",
+      { netReceivedAmount: number; transactionId: string },
+      any
+    >;
   };
   transfers: {
     createTransferRequest: FunctionReference<
@@ -1153,7 +1268,7 @@ export type PublicApiType = {
     cancelTransfer: FunctionReference<
       "mutation",
       "public",
-      { transferRequestId: Id<"transferRequests"> },
+      { transferRequestId: Id<"transferRequests">; userId: string },
       any
     >;
     acceptTransferSimple: FunctionReference<
@@ -1187,6 +1302,12 @@ export type PublicApiType = {
       any
     >;
     getPendingTransferForTicket: FunctionReference<
+      "query",
+      "public",
+      { ticketId: Id<"tickets"> },
+      any
+    >;
+    getAcceptedTransferForTicket: FunctionReference<
       "query",
       "public",
       { ticketId: Id<"tickets"> },
@@ -1296,6 +1417,24 @@ export type PublicApiType = {
       { emails: Array<string> },
       any
     >;
+    addOneSignalPlayerId: FunctionReference<
+      "mutation",
+      "public",
+      { playerId: string; userId: string },
+      any
+    >;
+    removeOneSignalPlayerId: FunctionReference<
+      "mutation",
+      "public",
+      { playerId: string; userId: string },
+      any
+    >;
+    getUserOneSignalPlayerIds: FunctionReference<
+      "query",
+      "public",
+      { userId: string },
+      any
+    >;
   };
   validators: {
     inviteValidator: FunctionReference<
@@ -1338,6 +1477,19 @@ export type PublicApiType = {
       "query",
       "public",
       { email: string },
+      any
+    >;
+    updateValidatorPermissions: FunctionReference<
+      "mutation",
+      "public",
+      {
+        dayIds?: Array<Id<"eventDays">>;
+        eventId: Id<"events">;
+        lotIds?: Array<Id<"ticketLots">>;
+        ticketTypeIds?: Array<Id<"ticketTypes">>;
+        userId: string;
+        validatorId: Id<"ticketValidators">;
+      },
       any
     >;
   };
@@ -1639,7 +1791,20 @@ export type PublicApiType = {
     getAllTransactionsPaginated: FunctionReference<
       "query",
       "public",
-      { eventId?: Id<"events">; limit?: number; page?: number; userId: string },
+      {
+        eventId?: Id<"events">;
+        limit?: number;
+        page?: number;
+        paginationOpts?: {
+          cursor: string | null;
+          endCursor?: string | null;
+          id?: number;
+          maximumBytesRead?: number;
+          maximumRowsRead?: number;
+          numItems: number;
+        };
+        userId: string;
+      },
       any
     >;
     getCreditCardInstallmentStats: FunctionReference<
@@ -1658,6 +1823,105 @@ export type PublicApiType = {
       "mutation",
       "public",
       { eventId: Id<"events">; userId: string },
+      any
+    >;
+    adminCreateRepresentative: FunctionReference<
+      "mutation",
+      "public",
+      {
+        adminUserId: string;
+        defaultCommissionRate?: number;
+        email?: string;
+        name: string;
+        phone?: string;
+        userId: string;
+      },
+      any
+    >;
+    adminAssignRepresentativeToEvent: FunctionReference<
+      "mutation",
+      "public",
+      {
+        adminUserId: string;
+        commissionRate: number;
+        eventId: Id<"events">;
+        representativeId: Id<"representatives">;
+      },
+      any
+    >;
+    adminRecordRepresentativePayout: FunctionReference<
+      "mutation",
+      "public",
+      {
+        adminUserId: string;
+        amount: number;
+        eventId: Id<"events">;
+        markPaid?: boolean;
+        notes?: string;
+        representativeId: Id<"representatives">;
+      },
+      any
+    >;
+    adminGetEventCommissionSummary: FunctionReference<
+      "query",
+      "public",
+      { adminUserId: string; eventId: Id<"events"> },
+      any
+    >;
+    adminUpdateRepresentative: FunctionReference<
+      "mutation",
+      "public",
+      {
+        adminUserId: string;
+        defaultCommissionRate?: number;
+        email?: string;
+        isActive?: boolean;
+        name?: string;
+        phone?: string;
+        representativeId: Id<"representatives">;
+      },
+      any
+    >;
+    adminRemoveRepresentativeFromEvent: FunctionReference<
+      "mutation",
+      "public",
+      {
+        adminUserId: string;
+        eventId: Id<"events">;
+        representativeId: Id<"representatives">;
+      },
+      any
+    >;
+    adminUpdateRepresentativePayoutStatus: FunctionReference<
+      "mutation",
+      "public",
+      {
+        adminUserId: string;
+        payoutId: Id<"representativePayouts">;
+        status: "pending" | "paid";
+      },
+      any
+    >;
+    adminGetEventRepresentatives: FunctionReference<
+      "query",
+      "public",
+      { adminUserId: string; eventId: Id<"events"> },
+      any
+    >;
+    adminGetRepresentativePayoutsByEvent: FunctionReference<
+      "query",
+      "public",
+      {
+        adminUserId: string;
+        eventId: Id<"events">;
+        representativeId?: Id<"representatives">;
+      },
+      any
+    >;
+    getAdminOneSignalPlayerIds: FunctionReference<
+      "query",
+      "public",
+      Record<string, never>,
       any
     >;
   };
@@ -1906,6 +2170,134 @@ export type PublicApiType = {
       "mutation",
       "public",
       { eventId: Id<"events"> },
+      any
+    >;
+  };
+  disputes: {
+    createOrUpdateFromWebhook: FunctionReference<
+      "mutation",
+      "public",
+      {
+        provider: "pagarme" | "mercadopago";
+        providerEventType?: string;
+        providerPayload?: any;
+        transactionId: string;
+      },
+      any
+    >;
+    listDisputes: FunctionReference<
+      "query",
+      "public",
+      {
+        eventId?: Id<"events">;
+        limit?: number;
+        organizationId?: Id<"organizations">;
+        status?: "open" | "won" | "lost" | "canceled";
+        userId: string;
+      },
+      any
+    >;
+    getDisputeById: FunctionReference<
+      "query",
+      "public",
+      { disputeId: Id<"disputes">; userId: string },
+      any
+    >;
+    resolveDispute: FunctionReference<
+      "mutation",
+      "public",
+      {
+        disputeId: Id<"disputes">;
+        outcome: "won" | "lost" | "canceled";
+        resolutionNotes?: string;
+        userId: string;
+      },
+      any
+    >;
+  };
+  representatives: {
+    createRepresentative: FunctionReference<
+      "mutation",
+      "public",
+      {
+        createdBy: string;
+        defaultCommissionRate?: number;
+        email?: string;
+        name: string;
+        phone?: string;
+        userId: string;
+      },
+      any
+    >;
+    updateRepresentative: FunctionReference<
+      "mutation",
+      "public",
+      {
+        defaultCommissionRate?: number;
+        email?: string;
+        isActive?: boolean;
+        name?: string;
+        phone?: string;
+        representativeId: Id<"representatives">;
+      },
+      any
+    >;
+    assignRepresentativeToEvent: FunctionReference<
+      "mutation",
+      "public",
+      {
+        assignedBy: string;
+        commissionRate: number;
+        eventId: Id<"events">;
+        representativeId: Id<"representatives">;
+      },
+      any
+    >;
+    removeRepresentativeFromEvent: FunctionReference<
+      "mutation",
+      "public",
+      {
+        eventId: Id<"events">;
+        removedBy: string;
+        representativeId: Id<"representatives">;
+      },
+      any
+    >;
+    recordRepresentativePayout: FunctionReference<
+      "mutation",
+      "public",
+      {
+        amount: number;
+        eventId: Id<"events">;
+        markPaid?: boolean;
+        notes?: string;
+        recordedBy: string;
+        representativeId: Id<"representatives">;
+      },
+      any
+    >;
+    updateRepresentativePayoutStatus: FunctionReference<
+      "mutation",
+      "public",
+      { payoutId: Id<"representativePayouts">; status: "pending" | "paid" },
+      any
+    >;
+    getEventCommissionSummary: FunctionReference<
+      "query",
+      "public",
+      { eventId: Id<"events"> },
+      any
+    >;
+    getRepresentativeDashboardByUser: FunctionReference<
+      "query",
+      "public",
+      { userId: string },
+      any
+    >;
+    getRepresentativeByUser: FunctionReference<
+      "query",
+      "public",
+      { userId: string },
       any
     >;
   };

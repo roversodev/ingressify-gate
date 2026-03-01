@@ -10,6 +10,9 @@ export default function ScannerLayout() {
         gestureEnabled: true,
       }}
     >
+      <Stack.Screen name="dashboard/[eventId]" />
+      <Stack.Screen name="finance/[eventId]" />
+      <Stack.Screen name="courtesy/[eventId]" />
       <Stack.Screen name="[eventId]" />
       <Stack.Screen name="search" />
       <Stack.Screen name="validators" />

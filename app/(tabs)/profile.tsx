@@ -2,7 +2,7 @@ import { api } from '@/api';
 import { useAuth, useUser } from '@clerk/clerk-expo';
 import { Ionicons } from '@expo/vector-icons';
 import { useMutation } from 'convex/react';
-import { useRouter } from 'expo-router';
+import { router } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
   Alert,
@@ -26,7 +26,6 @@ interface UserStats {
 export default function ProfileScreen() {
   const { signOut } = useAuth();
   const { user } = useUser();
-  const router = useRouter();
   const [imageError, setImageError] = useState(false);
   const [userStats, setUserStats] = useState<UserStats>({
     totalEvents: 0,
@@ -109,38 +108,10 @@ const handleSignOut = () => {
   );
 };
 
-// Fluxo de exclusão de conta: NÃO navegar manualmente após deletar
-const handleDeleteAccount = () => {
-  Alert.alert(
-    'Excluir conta',
-    'Esta ação é permanente e removerá sua conta e dados associados. Deseja continuar?',
-    [
-      { text: 'Cancelar', style: 'cancel' },
-      {
-        text: 'Excluir',
-        style: 'destructive',
-        onPress: async () => {
-          try {
-            setIsDeleting(true);
-            await excludeUser({ userId: user?.id as string });
-            await user?.delete?.();
-            // Não chamar router.replace aqui
-          } catch (err) {
-            console.error('Erro ao excluir conta', err);
-            Alert.alert('Erro', 'Não foi possível excluir a conta. Tente novamente.');
-          } finally {
-            setIsDeleting(false);
-          }
-        },
-      },
-    ]
-  );
-};
-
 const handleMenuPress = (item: string) => {
   switch (item) {
     case 'settings':
-      Alert.alert('Configurações', 'Funcionalidade em desenvolvimento');
+      router.push('/settings');
       break;
     case 'help':
       Alert.alert(
@@ -158,7 +129,7 @@ const handleMenuPress = (item: string) => {
     case 'about':
       Alert.alert(
         'Sobre o Ingressify',
-        'Ingressify App Leitor v1.0.7\n\nSistema de validação de ingressos para eventos.\n\n© 2025 Ingressify. Todos os direitos reservados.'
+        'Ingressify App Leitor v2.0\n\nSistema de validação de ingressos para eventos.\n\n© 2025 Ingressify. Todos os direitos reservados.'
       );
       break;
     case 'privacy':
@@ -186,9 +157,6 @@ const handleMenuPress = (item: string) => {
           },
         ]
       );
-      break;
-    case 'delete':
-      handleDeleteAccount();
       break;
   }
 };
@@ -246,13 +214,7 @@ const menuItems = [
     title: 'Termos de Uso',
     icon: 'document-text-outline' as const,
     color: '#22d3ee',
-  },
-  {
-    id: 'delete',
-    title: isDeleting ? 'Excluindo...' : 'Excluir Conta',
-    icon: 'trash-outline' as const,
-    color: '#ef4444',
-  },
+  }
 ];
 
 return (
@@ -392,7 +354,7 @@ return (
       {/* App Version */}
       <View className="items-center pb-8 mb-12">
         <Text className="text-textSecondary" style={{ fontSize: isTablet ? 14 : 12 }}>
-          Ingressify App Leitor v1.0.7
+          Ingressify App Leitor v2.0
         </Text>
       </View>
     </ScrollView>

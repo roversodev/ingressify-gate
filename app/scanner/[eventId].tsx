@@ -15,7 +15,6 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 // Importe o componente CustomAlert
 import CustomAlert from '@/components/CustomAlert';
-import { IconSymbol } from '@/components/ui/IconSymbol';
 import { useIsFocused } from '@react-navigation/native';
 import { ErrorBoundary } from '../../components/ErrorBoundary';
 
@@ -414,20 +413,6 @@ export default function ScannerScreen() {
               </Text>
             </View>
           )}
-          {isEventOwner() && (
-            <TouchableOpacity
-              onPress={() => router.push(`/scanner/validators?eventId=${eventId}`)}
-              style={styles.validatorsButton}
-            >
-              <IconSymbol name="person.2" size={20} color="#fff" />
-            </TouchableOpacity>
-          )}
-          <TouchableOpacity
-            style={styles.listsButton}
-            onPress={() => router.push(`/scanner/lists?eventId=${eventId}`)}
-          >
-            <IconSymbol size={20} color="#FFFFFF" name={'list.bullet'} />
-          </TouchableOpacity>
         </View>
 
         {/* Container relativo para sobrepor UI por cima da câmera */}

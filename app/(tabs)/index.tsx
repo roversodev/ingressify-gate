@@ -94,7 +94,7 @@ function EventItem({ event, onPress }: { event: any, onPress: () => void }) {
             {event.name}
           </Text>
           <Text className="text-gray-400 text-sm" style={{ fontSize: locationFont }}>
-            {event.location}
+            {event.location?.split('-')[0]?.trim() || 'Local não disponível'}
           </Text>
         </View>
         <View className="bg-primary/10 px-3 py-1 rounded-full">
@@ -140,6 +140,7 @@ export default function EventsScreen() {
   const { user } = useUser();
   const router = useRouter();
   const [refreshing, setRefreshing] = React.useState(false);
+  const [activeTab, setActiveTab] = React.useState<'upcoming' | 'past'>('upcoming');
 
   // Hook para gerenciar convites pendentes
   const { 
@@ -198,7 +199,7 @@ export default function EventsScreen() {
   }, [user, hasPendingInvites, showInviteModal, pendingInvites]);
 
   // Combinar os eventos do vendedor e os eventos que o usuário pode validar
-  const formattedEvents = React.useMemo(() => {
+  const { upcomingEvents, pastEvents } = React.useMemo(() => {
     const allEvents: any[] = [];
     
     // Adicionar eventos do vendedor
@@ -241,18 +242,37 @@ export default function EventsScreen() {
       allEvents.push(...uniqueEvents);
     }
     
-    // Sort by date descending (newest first)
-    return allEvents.sort((a, b) => {
-      const dateA = new Date(a.date).getTime();
-      const dateB = new Date(b.date).getTime();
-      return dateB - dateA;
+    const now = Date.now();
+    const upcoming: any[] = [];
+    const past: any[] = [];
+
+    allEvents.forEach(event => {
+      const isFinished = event.endDate && new Date(event.endDate).getTime() < now;
+      if (isFinished) {
+        past.push(event);
+      } else {
+        upcoming.push(event);
+      }
     });
+
+    // Sort upcoming by date ascending (soonest first)
+    const sortedUpcoming = upcoming.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    
+    // Sort past by date descending (most recent first)
+    const sortedPast = past.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+    return { 
+      upcomingEvents: sortedUpcoming, 
+      pastEvents: sortedPast 
+    };
   }, [sellerEvents, validatorEvents]);
+
+  const currentEvents = activeTab === 'upcoming' ? upcomingEvents : pastEvents;
 
   if (sellerEvents === undefined && validatorEvents === undefined) {
     return (
       <SafeAreaView className="flex-1 justify-center items-center bg-background">
-        <ActivityIndicator size="large" color="#E8B322" />
+        <ActivityIndicator size="large" color="#E65CFF" />
         <Text className="text-white text-base mt-4">Carregando eventos...</Text>
       </SafeAreaView>
     );
@@ -296,6 +316,7 @@ export default function EventsScreen() {
             <TouchableOpacity
               onPress={() => handleOpenInvite(pendingInvites[0])}
               className="bg-yellow-500 px-4 py-2 rounded-lg"
+              activeOpacity={1}
             >
               <Text className="text-black font-semibold text-sm">
                 Ver Convite
@@ -306,26 +327,54 @@ export default function EventsScreen() {
       )}
 
       {/* Header */}
-      <View className="px-6 pt-6 pb-4">
-        <Text className="text-white text-2xl font-bold mb-1" style={{ fontSize: isTablet ? 28 : undefined }}>Eventos</Text>
-        <Text className="text-gray-400 text-sm" style={{ fontSize: isTablet ? 16 : undefined }}>
-          {formattedEvents.length} {formattedEvents.length === 1 ? 'evento' : 'eventos'}
+      <View className="px-6 pt-6 pb-2 min-w-full">
+        <Text className="text-white text-2xl font-bold mb-4" style={{ fontSize: isTablet ? 28 : undefined }}>Eventos</Text>
+        
+        {/* Tab Selector */}
+        <View className="flex-row items-center mb-4 border-b border-gray-800/30 w-full">
+          <HapticTab 
+            onPress={() => setActiveTab('upcoming')}
+            className="flex-1 pb-3 relative items-center"
+            pressOpacity={1}
+          >
+            <Text className={`text-lg font-semibold ${activeTab === 'upcoming' ? 'text-white' : 'text-gray-500'}`}>
+              Próximos
+            </Text>
+            {activeTab === 'upcoming' && (
+              <View className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary" />
+            )}
+          </HapticTab>
+
+          <HapticTab 
+            onPress={() => setActiveTab('past')}
+            className="flex-1 pb-3 relative items-center"
+            pressOpacity={1}
+          >
+            <Text className={`text-lg font-semibold ${activeTab === 'past' ? 'text-white' : 'text-gray-500'}`}>
+              Anteriores
+            </Text>
+            {activeTab === 'past' && (
+              <View className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary" />
+            )}
+          </HapticTab>
+        </View>
+
+        <Text className="text-gray-400 text-sm mb-2" style={{ fontSize: isTablet ? 16 : undefined }}>
+          {currentEvents.length} {currentEvents.length === 1 ? 'evento' : 'eventos'}
         </Text>
       </View>
       
       <FlatList
-        data={formattedEvents}
+        data={currentEvents}
         renderItem={({ item }) => {
-          const isFinished = item.endDate && new Date(item.endDate).getTime() < Date.now();
-          
-          if (isFinished) {
+          if (activeTab === 'past') {
             return <MinimalEventCard event={item} />;
           }
 
           return (
             <EventItem 
               event={item} 
-              onPress={() => router.push(`/scanner/${item._id}`)}
+              onPress={() => router.push(`/scanner/dashboard/${item._id}`)}
             />
           );
         }}
@@ -334,7 +383,7 @@ export default function EventsScreen() {
           <RefreshControl 
             refreshing={refreshing} 
             onRefresh={onRefresh}
-            tintColor="#E8B322"
+            tintColor="#E65CFF"
           />
         }
         numColumns={numColumns}

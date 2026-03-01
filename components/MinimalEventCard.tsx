@@ -38,7 +38,7 @@ export default function MinimalEventCard({ event }: MinimalEventCardProps) {
   const location = event.location?.split('-')[0]?.trim() || 'Local a definir'; 
 
   const handleEventPress = () => { 
-    router.push(`/scanner/${event._id}`); 
+    router.push(`/scanner/dashboard/${event._id}`); 
   }; 
 
   return ( 
@@ -58,7 +58,7 @@ export default function MinimalEventCard({ event }: MinimalEventCardProps) {
             /> 
           ) : ( 
             <View className="flex h-[68px] w-[68px] items-center justify-center rounded bg-[#232323]"> 
-              <Ionicons name="ticket-outline" size={32} color="#E8B322" /> 
+              <Ionicons name="ticket-outline" size={32} color="#E65CFF" /> 
             </View> 
           )} 
         </View> 
@@ -75,7 +75,7 @@ export default function MinimalEventCard({ event }: MinimalEventCardProps) {
               > 
                 {event.name} 
               </Text> 
-              <Text className="text-sm font-medium leading-4 text-[#E8B322] capitalize mt-1"> 
+              <Text className="text-sm font-medium leading-4 text-[#E65CFF] capitalize mt-1"> 
                 {dateInfo.weekday}, {dateInfo.day} de {dateInfo.month} 
               </Text> 
               <Text 

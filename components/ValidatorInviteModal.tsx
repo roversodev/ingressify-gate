@@ -151,7 +151,7 @@ export default function ValidatorInviteModal({ invitation, visible, onClose }: V
                     </Text>
                     
                     <View className="flex-row items-center mb-2">
-                      <IconSymbol name="person.fill" size={16} color="#E8B322" />
+                      <IconSymbol name="person.fill" size={16} color="#E65CFF" />
                       <Text className="text-gray-300 ml-2" style={{ fontSize: textFont }}>
                         Convidado por: {invitation.invitedBy.name}
                       </Text>
@@ -171,14 +171,14 @@ export default function ValidatorInviteModal({ invitation, visible, onClose }: V
                     </Text>
                     
                     <View className="flex-row items-center mb-2">
-                      <IconSymbol name="person.fill" size={16} color="#E8B322" />
+                      <IconSymbol name="person.fill" size={16} color="#E65CFF" />
                       <Text className="text-gray-300 ml-2" style={{ fontSize: textFont }}>
                         Convidado por: {invitation.invitedBy.name}
                       </Text>
                     </View>
                     
                     <View className="flex-row items-center">
-                      <IconSymbol name="envelope" size={16} color="#E8B322" />
+                      <IconSymbol name="envelope" size={16} color="#E65CFF" />
                       <Text className="text-gray-300 ml-2" style={{ fontSize: textFont }}>
                         {invitation.email}
                       </Text>

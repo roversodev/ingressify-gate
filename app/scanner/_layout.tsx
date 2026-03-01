@@ -13,6 +13,7 @@ export default function ScannerLayout() {
       <Stack.Screen name="dashboard/[eventId]" />
       <Stack.Screen name="finance/[eventId]" />
       <Stack.Screen name="courtesy/[eventId]" />
+      <Stack.Screen name="abandoned-carts/[eventId]" />
       <Stack.Screen name="[eventId]" />
       <Stack.Screen name="search" />
       <Stack.Screen name="validators" />

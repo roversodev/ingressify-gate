@@ -109,6 +109,15 @@ export default function EventDashboardScreen() {
       route: `/scanner/courtesy/${eventId}`,
       visible: isAdmin,
     },
+    {
+      id: 'abandoned-carts',
+      title: 'Carrinhos Abandonados',
+      subtitle: 'Recuperar vendas',
+      icon: 'cart.badge.minus',
+      color: '#f43f5e',
+      route: `/scanner/abandoned-carts/${eventId}`,
+      visible: isAdmin,
+    },
   ];
 
   const visibleMenuItems = menuItems.filter(item => item.visible);

@@ -22,6 +22,7 @@ const MAPPING = {
 
   // usados no app
   envelope: 'email',
+  'envelope.fill': 'email',
   lock: 'lock',
   globe: 'public',
   'exclamationmark.triangle': 'warning',
@@ -37,10 +38,17 @@ const MAPPING = {
   'list.bullet': 'format-list-bulleted',
   magnifyingglass: 'search',
   'checkmark.circle.fill': 'check-circle',
+  'xmark.circle.fill': 'cancel',
   'person.3': 'groups',
   'person.circle': 'account-circle',
   xmark: 'close',
   calendar: 'event',
+  'mappin.and.ellipse': 'location-on',
+  'qrcode.viewfinder': 'qr-code-scanner',
+  'dollarsign.circle': 'monetization-on',
+  gift: 'card-giftcard',
+  'cart.badge.minus': 'remove-shopping-cart',
+  'message.fill': 'chat',
 } as IconMapping;
 
 /**

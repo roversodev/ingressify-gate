@@ -653,6 +653,16 @@ export type PublicApiType = {
       },
       any
     >;
+    getOrganizationAbandonedCarts: FunctionReference<
+      "query",
+      "public",
+      {
+        eventId?: Id<"events">;
+        organizationId: Id<"organizations">;
+        userId: string;
+      },
+      any
+    >;
     getOrganizationCardTransactionsForReleasesPaginated: FunctionReference<
       "query",
       "public",
@@ -1249,6 +1259,28 @@ export type PublicApiType = {
       "mutation",
       "public",
       { netReceivedAmount: number; transactionId: string },
+      any
+    >;
+    upsertAbandonedCart: FunctionReference<
+      "mutation",
+      "public",
+      {
+        customerCpf?: string;
+        customerEmail?: string;
+        customerName?: string;
+        customerPhone?: string;
+        eventId: Id<"events">;
+        step: string;
+        ticketSelections: any;
+        totalAmount: number;
+        userId?: string;
+      },
+      any
+    >;
+    markCartAsRecovered: FunctionReference<
+      "mutation",
+      "public",
+      { customerEmail: string; eventId: Id<"events">; transactionId: string },
       any
     >;
   };
@@ -1922,6 +1954,53 @@ export type PublicApiType = {
       "query",
       "public",
       Record<string, never>,
+      any
+    >;
+    listAllOrganizations: FunctionReference<
+      "query",
+      "public",
+      { limit?: number; searchTerm?: string; skip?: number; userId: string },
+      any
+    >;
+    addSelfToOrganization: FunctionReference<
+      "mutation",
+      "public",
+      { adminId: string; organizationId: Id<"organizations"> },
+      any
+    >;
+    removeOrganizationMember: FunctionReference<
+      "mutation",
+      "public",
+      { adminId: string; organizationId: Id<"organizations">; userId: string },
+      any
+    >;
+    updateOrganizationMemberRole: FunctionReference<
+      "mutation",
+      "public",
+      {
+        adminId: string;
+        newRole: "owner" | "admin" | "staff";
+        organizationId: Id<"organizations">;
+        userId: string;
+      },
+      any
+    >;
+    deleteOrganization: FunctionReference<
+      "mutation",
+      "public",
+      { adminId: string; organizationId: Id<"organizations"> },
+      any
+    >;
+    getEventsPageData: FunctionReference<
+      "query",
+      "public",
+      { limit?: number; searchTerm?: string; skip?: number; userId: string },
+      any
+    >;
+    getGlobalEventStats: FunctionReference<
+      "query",
+      "public",
+      { userId: string },
       any
     >;
   };

@@ -1,11 +1,15 @@
 import { api } from '@/api';
+import { clampInt, expiresAt, remainingMs, shouldUseCache } from '@/services/scannerPending';
 import { useUser } from '@clerk/clerk-expo';
-import { useMutation, useQuery } from 'convex/react';
+import { useConvex, useMutation, useQuery } from 'convex/react';
 import { type GenericId as Id } from "convex/values";
 import { CameraType, CameraView, useCameraPermissions } from 'expo-camera';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
+  Animated,
+  Modal,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -15,6 +19,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 // Importe o componente CustomAlert
 import CustomAlert from '@/components/CustomAlert';
+import { IconSymbol } from '@/components/ui/IconSymbol';
 import { useIsFocused } from '@react-navigation/native';
 import { ErrorBoundary } from '../../components/ErrorBoundary';
 
@@ -66,6 +71,7 @@ function mapBackendErrorToUI(errorType?: string, defaultMessage?: string) {
 export default function ScannerScreen() {
   const { eventId } = useLocalSearchParams<{ eventId: string }>();
   const router = useRouter();
+  const convex = useConvex();
   const [facing, setFacing] = useState<CameraType>('back');
   const [scanned, setScanned] = useState(false);
   const [isValidating, setIsValidating] = useState(false);
@@ -76,6 +82,15 @@ export default function ScannerScreen() {
   
   // NOVO: Estado para controlar se a câmera deve ser pausada
   const [cameraActive, setCameraActive] = useState(true);
+  const [pendingVisible, setPendingVisible] = useState(false);
+  const [pendingPreview, setPendingPreview] = useState<any>(null);
+  const [pendingExpiresAt, setPendingExpiresAt] = useState<number | null>(null);
+  const [pendingRemainingMs, setPendingRemainingMs] = useState<number>(0);
+  const [pendingReadAll, setPendingReadAll] = useState(false);
+  const [pendingQuantity, setPendingQuantity] = useState(1);
+  const [isConfirming, setIsConfirming] = useState(false);
+  const confirmProgressAnim = useRef(new Animated.Value(0)).current;
+  const previewCacheRef = useRef<Map<string, { at: number; preview: any }>>(new Map());
 
   // Estado para o alerta personalizado - MOVIDO PARA O TOPO
   const [alert, setAlert] = useState<{
@@ -132,7 +147,7 @@ export default function ScannerScreen() {
     api.events.getById,
     safeEventId ? { eventId: safeEventId as Id<"events"> } : "skip"
   );
-  const validateTicket = useMutation(api.tickets.validateTicket);
+  const confirmScan = useMutation((api as any).tickets.confirmScan);
   const availability = useQuery(
     api.events.getEventAvailability,
     safeEventId ? { eventId: safeEventId as Id<"events"> } : "skip"
@@ -143,6 +158,27 @@ export default function ScannerScreen() {
       requestPermission();
     }
   }, [permission, requestPermission]);
+
+  useEffect(() => {
+    if (!pendingVisible || !pendingExpiresAt) return;
+    const id = setInterval(() => {
+      const next = remainingMs(pendingExpiresAt, Date.now());
+      setPendingRemainingMs(next);
+      const ms = next;
+      if (ms <= 0) {
+        setPendingVisible(false);
+        setPendingPreview(null);
+        setPendingExpiresAt(null);
+        setPendingReadAll(false);
+        setPendingQuantity(1);
+        setScanned(false);
+        setIsValidating(false);
+        lastScannedRef.current = '';
+        setCameraActive(true);
+      }
+    }, 120);
+    return () => clearInterval(id);
+  }, [pendingVisible, pendingExpiresAt]);
 
   // Função para mostrar alerta personalizado - ATUALIZADA
   const showAlert = (
@@ -215,6 +251,119 @@ export default function ScannerScreen() {
     );
   }
 
+  const closePending = (resumeCamera: boolean) => {
+    setPendingVisible(false);
+    setPendingPreview(null);
+    setPendingExpiresAt(null);
+    setPendingReadAll(false);
+    setPendingQuantity(1);
+    setIsConfirming(false);
+    confirmProgressAnim.setValue(0);
+    setScanned(false);
+    setIsValidating(false);
+    lastScannedRef.current = '';
+    if (resumeCamera) {
+      setTimeout(() => setCameraActive(true), 80);
+    }
+  };
+
+  const handleConfirmPending = async () => {
+    if (!pendingPreview) return;
+    if (isConfirming) return;
+
+    setIsConfirming(true);
+    confirmProgressAnim.setValue(0);
+    Animated.timing(confirmProgressAnim, {
+      toValue: 1,
+      duration: 650,
+      useNativeDriver: false,
+    }).start();
+
+    try {
+      const mode = pendingPreview.mode;
+      const readAllSameType = mode !== 'passport' && pendingReadAll === true;
+      const quantityToRedeem = mode === 'passport' ? 1 : clampInt(pendingQuantity, 1, 50);
+
+      const result = await confirmScan({
+        ticketId: pendingPreview.ticket._id,
+        eventId: safeEventId as Id<"events">,
+        userId: user?.id ?? "",
+        quantity: readAllSameType ? 1 : quantityToRedeem,
+        readAllSameType,
+      });
+
+      if (result && result.success) {
+        const total = result.totalRedeemed ?? 1;
+        const ticketTypeName = pendingPreview?.ticketType?.name ?? '—';
+        const dayName =
+          (pendingPreview as any)?.day?.name ||
+          (pendingPreview as any)?.day?.label ||
+          ((pendingPreview as any)?.day?.date ? new Date((pendingPreview as any).day.date).toLocaleDateString('pt-BR') : null);
+        const sectorName =
+          (pendingPreview as any)?.ticketType?.sector?.name ||
+          (pendingPreview as any)?.ticketType?.sectorName ||
+          (pendingPreview as any)?.ticketType?.sector ||
+          null;
+        const lotName = (pendingPreview as any)?.lot?.name || null;
+
+        const alertMessage = [
+          `Tipo: ${ticketTypeName}`,
+          dayName ? `Dia: ${dayName}` : null,
+          sectorName ? `Setor: ${sectorName}` : lotName ? `Setor/Lote: ${lotName}` : null,
+          total > 1 ? `Validados: ${total}` : 'Validado: 1',
+        ]
+          .filter(Boolean)
+          .join('\n');
+
+        showAlert(
+          'success',
+          '✅ LEITURA CONFIRMADA',
+          alertMessage,
+          [
+            {
+              text: 'Continuar',
+              onPress: () => {
+                closePending(true);
+              }
+            }
+          ]
+        );
+        setPendingVisible(false);
+        return;
+      }
+
+      const ui = mapBackendErrorToUI(result?.errorType, result?.message);
+      showAlert(
+        result?.errorType === 'ALREADY_USED' ? 'warning' : 'error',
+        ui.title,
+        ui.message,
+        [
+          {
+            text: 'OK',
+            onPress: () => {
+              closePending(true);
+            }
+          }
+        ]
+      );
+      setPendingVisible(false);
+    } catch (error: any) {
+      const ui = mapBackendErrorToUI("INTERNAL_ERROR", error?.message || 'Falha de comunicação com o servidor.');
+      showAlert('error', ui.title, ui.message, [
+        {
+          text: 'OK',
+          onPress: () => {
+            closePending(true);
+          }
+        }
+      ]);
+      setPendingVisible(false);
+    } finally {
+      setIsConfirming(false);
+      confirmProgressAnim.setValue(0);
+    }
+  };
+
 
 
   const handleBarcodeScanned = async ({ type, data }: { type: string; data: string }) => {
@@ -286,54 +435,44 @@ export default function ScannerScreen() {
         return;
       }
 
-      // Chamar a função de validação no Convex
-      const result = await validateTicket({
-        ticketId: ticketData.ticketId,
-        eventId: safeEventId as Id<"events">,
-        userId: user?.id ?? ''
-      });
+      const cacheKey = String(ticketData.ticketId);
+      const cached = previewCacheRef.current.get(cacheKey);
+      const canUseCache = cached ? shouldUseCache(cached.at, Date.now(), 15000) : false;
 
-      // Sempre verificar o resultado estruturado, não depender de exceções
-      if (result && result.success) {
-        showAlert(
-          'success',
-          '✅ ENTRADA LIBERADA',
-          `Tipo: ${result.ticketType?.name || 'N/A'} | Qtd: ${result.ticket?.quantity || 1}`,
-          [
-            {
-              text: 'Continuar',
-              onPress: () => {
-                setScanned(false);
-                setIsValidating(false);
-                lastScannedRef.current = '';
-              }
-            },
-          ]
-        );
-      } else {
-        // Usar a função mapBackendErrorToUI para obter título e mensagem formatados
-        const ui = mapBackendErrorToUI(result?.errorType, result?.message);
-        
-        // Determinar o tipo de alerta baseado no errorType
-        let alertType = 'error';
-        if (result?.errorType === 'ALREADY_USED') {
-          alertType = 'warning';
-        }
+      const preview = canUseCache
+        ? cached!.preview
+        : await convex.query((api as any).tickets.previewScan, {
+            ticketId: ticketData.ticketId,
+            eventId: safeEventId as Id<"events">,
+            userId: user?.id ?? "",
+          });
 
-        showAlert(
-          alertType as 'success' | 'warning' | 'error' | 'info',
-          ui.title,
-          ui.message,
-          [{
+      previewCacheRef.current.set(cacheKey, { at: Date.now(), preview });
+
+      if (!preview || !preview.success) {
+        const ui = mapBackendErrorToUI(preview?.errorType, preview?.message);
+        const alertType = preview?.errorType === 'ALREADY_USED' ? 'warning' : 'error';
+        showAlert(alertType as 'success' | 'warning' | 'error' | 'info', ui.title, ui.message, [
+          {
             text: 'OK',
             onPress: () => {
               setScanned(false);
               setIsValidating(false);
               lastScannedRef.current = '';
             }
-          }]
-        );
+          }
+        ]);
+        return;
       }
+
+      setPendingPreview(preview);
+      setPendingVisible(true);
+      setPendingExpiresAt(expiresAt(Date.now(), 30000));
+      setPendingRemainingMs(30000);
+      setPendingReadAll(false);
+      setPendingQuantity(1);
+      setCameraActive(false);
+      setIsValidating(false);
     } catch (error: any) {
       console.error('Erro ao validar ingresso:', error);
 
@@ -398,6 +537,126 @@ export default function ScannerScreen() {
             setTimeout(() => setCameraActive(true), 100);
           }}
         />
+
+        <Modal
+          visible={pendingVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={() => closePending(true)}
+        >
+          <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.65)', justifyContent: 'flex-end' }}>
+            <View className="bg-background rounded-t-3xl px-5 pt-5 pb-6 border-t border-white/10">
+              <View className="flex-row items-center justify-between mb-4">
+                <View className="flex-row items-center">
+                  <View className="w-9 h-9 rounded-xl items-center justify-center bg-primary/15 mr-3">
+                    <IconSymbol name="qrcode.viewfinder" size={18} color="#E65CFF" />
+                  </View>
+                  <View>
+                    <Text className="text-white font-bold text-lg">Leitura pendente</Text>
+                    <Text className="text-textSecondary text-sm">
+                      Confirme em {Math.max(0, Math.ceil(pendingRemainingMs / 1000))}s
+                    </Text>
+                  </View>
+                </View>
+                <TouchableOpacity onPress={() => closePending(true)} className="p-2">
+                  <IconSymbol name="xmark" size={18} color="#A3A3A3" />
+                </TouchableOpacity>
+              </View>
+
+              <View className="bg-backgroundCard rounded-2xl p-4 border border-white/5 mb-4">
+                <View className="flex-row items-center justify-between">
+                  <Text className="text-textSecondary text-sm">Tipo</Text>
+                  <Text className="text-white font-semibold text-sm" numberOfLines={1}>
+                    {pendingPreview?.ticketType?.name || '—'}
+                  </Text>
+                </View>
+                <View className="flex-row items-center justify-between mt-2">
+                  <Text className="text-textSecondary text-sm">Titular</Text>
+                  <Text className="text-white font-semibold text-sm" numberOfLines={1}>
+                    {pendingPreview?.holder?.name || pendingPreview?.holder?.email || '—'}
+                  </Text>
+                </View>
+                <View className="flex-row items-center justify-between mt-2">
+                  <Text className="text-textSecondary text-sm">Status</Text>
+                  <Text className="text-white font-semibold text-sm" numberOfLines={1}>
+                    {pendingPreview?.ticket?.status || '—'}
+                  </Text>
+                </View>
+
+                {pendingPreview?.mode === 'passport' ? (
+                  <View className="flex-row items-center justify-between mt-2">
+                    <Text className="text-textSecondary text-sm">Usos restantes</Text>
+                    <Text className="text-white font-semibold text-sm">
+                      {pendingPreview?.remainingUses ?? '—'}
+                    </Text>
+                  </View>
+                ) : (
+                  <View className="flex-row items-center justify-between mt-2">
+                    <Text className="text-textSecondary text-sm">Restante</Text>
+                    <Text className="text-white font-semibold text-sm">
+                      {'—'}
+                    </Text>
+                  </View>
+                )}
+              </View>
+
+              {pendingPreview?.mode !== 'passport' && pendingPreview?.sameTypeRemaining > 1 && (
+                <TouchableOpacity
+                  onPress={() => setPendingReadAll(prev => !prev)}
+                  activeOpacity={0.8}
+                  className="bg-backgroundCard rounded-2xl p-4 border border-white/5 mb-4 flex-row items-center justify-between"
+                >
+                  <View className="flex-1 pr-3">
+                    <Text className="text-white font-semibold text-base">Ler todos deste tipo</Text>
+                    <Text className="text-textSecondary text-sm mt-1">
+                      Até {Math.min(50, pendingPreview?.sameTypeRemaining || 0)} ingressos
+                    </Text>
+                  </View>
+                  <View className={`w-10 h-6 rounded-full p-1 ${pendingReadAll ? 'bg-primary' : 'bg-white/10'}`}>
+                    <View className={`w-4 h-4 rounded-full ${pendingReadAll ? 'bg-white ml-auto' : 'bg-white/50'}`} />
+                  </View>
+                </TouchableOpacity>
+              )}
+
+              {isConfirming && (
+                <View className="mb-4">
+                  <View className="h-2 bg-white/10 rounded-full overflow-hidden">
+                    <Animated.View
+                      style={{
+                        height: '100%',
+                        width: confirmProgressAnim.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] }),
+                        backgroundColor: '#E65CFF',
+                      }}
+                    />
+                  </View>
+                  <Text className="text-textSecondary text-xs mt-2 text-center">Confirmando…</Text>
+                </View>
+              )}
+
+              <View className="flex-row gap-3">
+                <TouchableOpacity
+                  onPress={() => closePending(true)}
+                  activeOpacity={0.85}
+                  className="flex-1 h-14 rounded-2xl items-center justify-center bg-backgroundCard border border-white/5"
+                  disabled={isConfirming}
+                >
+                  <Text className="text-white font-bold text-base">Cancelar</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={handleConfirmPending}
+                  activeOpacity={0.85}
+                  className={`flex-1 h-14 rounded-2xl items-center justify-center ${isConfirming ? 'bg-primary/60' : 'bg-primary'}`}
+                >
+                  {isConfirming ? (
+                    <ActivityIndicator color="#fff" />
+                  ) : (
+                    <Text className="text-white font-bold text-base">Confirmar leitura</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
 
         <View className='bg-background flex-row items-center py-4 px-3'>
           <TouchableOpacity onPress={() => router.back()} className='mr-4'>

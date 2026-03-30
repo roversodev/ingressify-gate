@@ -258,6 +258,12 @@ export type PublicApiType = {
       },
       any
     >;
+    cancelCourtesyTicket: FunctionReference<
+      "mutation",
+      "public",
+      { ticketId: Id<"tickets">; userId: string },
+      any
+    >;
     getEventBuyers: FunctionReference<
       "query",
       "public",
@@ -434,6 +440,23 @@ export type PublicApiType = {
       Record<string, never>,
       any
     >;
+    getEventBuyersPaginated: FunctionReference<
+      "query",
+      "public",
+      {
+        eventId: Id<"events">;
+        paginationOpts: {
+          cursor: string | null;
+          endCursor?: string | null;
+          id?: number;
+          maximumBytesRead?: number;
+          maximumRowsRead?: number;
+          numItems: number;
+        };
+        searchTerm?: string;
+      },
+      any
+    >;
   };
   migrations: {
     addSlugsToEvents: {
@@ -559,6 +582,12 @@ export type PublicApiType = {
       "public",
       { organizationId: Id<"organizations"> },
       any
+    >;
+    getMyOrganizationMembership: FunctionReference<
+      "query",
+      "public",
+      { organizationId: Id<"organizations">; userId: string },
+      { role: "admin" | "owner" | "staff" } | null
     >;
     updateOrganization: FunctionReference<
       "mutation",
@@ -728,6 +757,7 @@ export type PublicApiType = {
       "public",
       {
         code: string;
+        commissionRate?: number;
         couponName?: string;
         couponValidUntil?: number;
         createCoupon?: boolean;
@@ -763,7 +793,10 @@ export type PublicApiType = {
       "mutation",
       "public",
       {
+        commissionRate?: number;
+        couponCode?: string;
         email?: string;
+        hasCoupon?: boolean;
         isActive?: boolean;
         name?: string;
         phone?: string;
@@ -848,6 +881,18 @@ export type PublicApiType = {
       { teamId: Id<"promoterTeams"> },
       any
     >;
+    getMyPromoterDashboard: FunctionReference<
+      "query",
+      "public",
+      { userId: string },
+      any
+    >;
+    isUserPromoter: FunctionReference<
+      "query",
+      "public",
+      { userId: string },
+      any
+    >;
   };
   storage: {
     generateUploadUrl: FunctionReference<"mutation", "public", any, any>;
@@ -880,7 +925,11 @@ export type PublicApiType = {
     getEventTicketTypes: FunctionReference<
       "query",
       "public",
-      { eventId: Id<"events"> },
+      {
+        dayId?: Id<"eventDays">;
+        eventId: Id<"events">;
+        lotId?: Id<"ticketLots">;
+      },
       any
     >;
     getAllEventTicketTypes: FunctionReference<
@@ -958,6 +1007,12 @@ export type PublicApiType = {
       any
     >;
     getEventCourtesyTicketTypes: FunctionReference<
+      "query",
+      "public",
+      { eventId: Id<"events"> },
+      any
+    >;
+    getEventTicketTypesForCourtesy: FunctionReference<
       "query",
       "public",
       { eventId: Id<"events"> },
@@ -1095,8 +1150,17 @@ export type PublicApiType = {
       "mutation",
       "public",
       {
+        activationSettings?: {
+          activateAt?: number;
+          activationType: "manual" | "datetime" | "soldout" | "percentage";
+          deactivateAt?: number;
+          deactivationType?: "never" | "datetime" | "soldout";
+          enabled: boolean;
+          triggerPercentage?: number;
+          triggerTicketTypeId?: Id<"ticketTypes">;
+        };
         closeAt?: number;
-        dayId?: Id<"eventDays">;
+        dayId?: Id<"eventDays"> | null;
         description?: string;
         isActive?: boolean;
         lotId: Id<"ticketLots">;
@@ -1112,6 +1176,40 @@ export type PublicApiType = {
       "mutation",
       "public",
       { lotId: Id<"ticketLots"> },
+      any
+    >;
+    reorderTicketLots: FunctionReference<
+      "mutation",
+      "public",
+      { lotIds: Array<Id<"ticketLots">> },
+      any
+    >;
+    reorderEventDays: FunctionReference<
+      "mutation",
+      "public",
+      { dayIds: Array<Id<"eventDays">> },
+      any
+    >;
+    reorderTicketTypes: FunctionReference<
+      "mutation",
+      "public",
+      { ticketTypeIds: Array<Id<"ticketTypes">> },
+      any
+    >;
+    moveTicketLotToDay: FunctionReference<
+      "mutation",
+      "public",
+      { lotId: Id<"ticketLots">; newDayId?: Id<"eventDays"> | null },
+      any
+    >;
+    moveTicketTypeToLot: FunctionReference<
+      "mutation",
+      "public",
+      {
+        newDayId?: Id<"eventDays"> | null;
+        newLotId?: Id<"ticketLots"> | null;
+        ticketTypeId: Id<"ticketTypes">;
+      },
       any
     >;
   };
@@ -1153,6 +1251,24 @@ export type PublicApiType = {
       "mutation",
       "public",
       { eventId: Id<"events">; ticketId: Id<"tickets">; userId: string },
+      any
+    >;
+    previewScan: FunctionReference<
+      "query",
+      "public",
+      { eventId: Id<"events">; ticketId: Id<"tickets">; userId: string },
+      any
+    >;
+    confirmScan: FunctionReference<
+      "mutation",
+      "public",
+      {
+        eventId: Id<"events">;
+        quantity?: number;
+        readAllSameType?: boolean;
+        ticketId: Id<"tickets">;
+        userId: string;
+      },
       any
     >;
     getTicketsByIds: FunctionReference<

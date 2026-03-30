@@ -129,7 +129,7 @@ const handleMenuPress = (item: string) => {
     case 'about':
       Alert.alert(
         'Sobre o Ingressify',
-        'Ingressify App Leitor v2.1\n\nSistema de validação de ingressos para eventos.\n\n© 2025 Ingressify. Todos os direitos reservados.'
+        'Ingressify App Leitor v2.2\n\nSistema de validação de ingressos para eventos.\n\n© 2025 Ingressify. Todos os direitos reservados.'
       );
       break;
     case 'privacy':
@@ -354,7 +354,7 @@ return (
       {/* App Version */}
       <View className="items-center pb-8 mb-12">
         <Text className="text-textSecondary" style={{ fontSize: isTablet ? 14 : 12 }}>
-          Ingressify App Leitor v2.1
+          Ingressify App Leitor v2.2
         </Text>
       </View>
     </ScrollView>

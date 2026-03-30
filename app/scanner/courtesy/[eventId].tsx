@@ -7,15 +7,15 @@ import { type GenericId as Id } from "convex/values";
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useState } from 'react';
 import {
-    ActivityIndicator,
-    KeyboardAvoidingView,
-    Platform,
-    ScrollView,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    useWindowDimensions,
-    View,
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  useWindowDimensions,
+  View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -46,7 +46,7 @@ export default function CourtesyScreen() {
 
   // Queries e Mutations
   const event = useQuery(api.events.getById, { eventId: eventId as Id<"events"> });
-  const ticketTypes = useQuery(api.ticketTypes.getAllEventTicketTypes, { eventId: eventId as Id<"events"> });
+  const ticketTypesForCourtesy = useQuery(api.ticketTypes.getEventTicketTypesForCourtesy, { eventId: eventId as Id<"events"> });
   const generateCourtesy = useMutation(api.events.generateCourtesyTickets);
   
   const checkUserExists = useQuery(
@@ -55,7 +55,9 @@ export default function CourtesyScreen() {
   );
 
   const isUserValid = checkUserExists?.exists === true;
-  const courtesyTypes = ticketTypes?.filter((t: any) => t.isCourtesy) || [];
+  // Lista completa: cortesias em destaque; todos podem ser usados para envio
+  const allTicketTypes = ticketTypesForCourtesy ?? [];
+  const courtesyTypes = allTicketTypes.filter((t: { isCourtesy?: boolean }) => t.isCourtesy);
 
   const showAlert = useCallback((type: 'success' | 'warning' | 'error' | 'info', title: string, message: string) => {
     setAlert({ visible: true, type, title, message });
@@ -92,7 +94,7 @@ export default function CourtesyScreen() {
     }
   };
 
-  if (!event || ticketTypes === undefined) {
+  if (!event || ticketTypesForCourtesy === undefined) {
     return (
       <SafeAreaView className="flex-1 justify-center items-center bg-background">
         <ActivityIndicator size="large" color="#E65CFF" />
@@ -151,29 +153,51 @@ export default function CourtesyScreen() {
             )}
           </View>
 
-          {/* Seleção de Ingresso */}
+          {/* Seleção de Ingresso — todos os tipos (cortesia em destaque) */}
           <View className="mb-6">
             <Text className="text-textSecondary text-[10px] font-bold uppercase mb-4 ml-2 tracking-widest">Tipo de Cortesia</Text>
             <View className="gap-3">
-              {courtesyTypes.map((type: any) => (
-                <TouchableOpacity
-                  key={type._id}
-
-                  onPress={() => setSelectedType(type)}
-                  className={`p-4 rounded-2xl border flex-row items-center justify-between ${selectedType?._id === type._id ? 'bg-primary/10 border-primary' : 'bg-backgroundCard border-white/5'}`}
-                  activeOpacity={1}
-                >
-                  <View className="flex-row items-center">
-                    <View className={`w-8 h-8 rounded-lg items-center justify-center mr-3 ${selectedType?._id === type._id ? 'bg-primary/20' : 'bg-white/5'}`}>
-                      <IconSymbol name="calendar" size={16} color={selectedType?._id === type._id ? '#E65CFF' : '#444'} />
+              {allTicketTypes.map((type: { _id: string; name: string; isCourtesy?: boolean; dayName?: string | null; lotName?: string | null }) => {
+                const isCourtesy = type.isCourtesy === true;
+                const isSelected = selectedType?._id === type._id;
+                return (
+                  <TouchableOpacity
+                    key={type._id}
+                    onPress={() => setSelectedType(type)}
+                    className={`p-4 rounded-2xl border flex-row items-center justify-between ${isSelected ? 'bg-primary/10 border-primary' : isCourtesy ? 'bg-primary/5 border-primary/40' : 'bg-backgroundCard border-white/5'}`}
+                    activeOpacity={1}
+                  >
+                    <View className="flex-1 mr-2">
+                      <View className="flex-row items-center flex-wrap gap-2">
+                        <View className={`w-8 h-8 rounded-lg items-center justify-center ${isSelected ? 'bg-primary/20' : isCourtesy ? 'bg-primary/15' : 'bg-white/5'}`}>
+                          <IconSymbol name="calendar" size={16} color={isSelected ? '#E65CFF' : isCourtesy ? '#E65CFF' : '#444'} />
+                        </View>
+                        <Text className={`font-bold text-sm flex-shrink-0 ${isSelected ? 'text-primary' : isCourtesy ? 'text-primary' : 'text-white'}`}>
+                          {type.name}
+                        </Text>
+                        {isCourtesy && (
+                          <View className="bg-primary/20 px-2 py-0.5 rounded-full">
+                            <Text className="text-primary text-[10px] font-bold uppercase">Cortesia</Text>
+                          </View>
+                        )}
+                      </View>
+                      {(type.dayName || type.lotName) && (
+                        <View className="flex-row flex-wrap gap-x-3 mt-1.5 ml-10">
+                          {type.dayName && (
+                            <Text className="text-textSecondary text-xs">Dia: {type.dayName}</Text>
+                          )}
+                          {type.lotName && (
+                            <Text className="text-textSecondary text-xs">Setor/Lote: {type.lotName}</Text>
+                          )}
+                        </View>
+                      )}
                     </View>
-                    <Text className={`font-bold text-sm ${selectedType?._id === type._id ? 'text-primary' : 'text-white'}`}>{type.name}</Text>
-                  </View>
-                  {selectedType?._id === type._id && (
-                    <IconSymbol name="checkmark.circle.fill" size={20} color="#E65CFF" />
-                  )}
-                </TouchableOpacity>
-              ))}
+                    {isSelected && (
+                      <IconSymbol name="checkmark.circle.fill" size={20} color="#E65CFF" />
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
             </View>
           </View>
 

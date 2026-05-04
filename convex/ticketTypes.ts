@@ -622,7 +622,8 @@ export const validateTicketsForCheckout = query({
         quantity: v.number(),
       })
     ),
-    userId: v.optional(v.string()), // Para validar limites por usuário
+    userId: v.optional(v.string()),
+    cpf: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const validationErrors: string[] = [];
@@ -635,6 +636,7 @@ export const validateTicketsForCheckout = query({
       requestedQuantity: number;
       error?: string;
     }> = [];
+    const checkedLotIds = new Set<string>();
 
     // Verificar se o evento existe e não está cancelado
     const event = await ctx.db.get(args.eventId);
@@ -716,6 +718,58 @@ export const validateTicketsForCheckout = query({
           isValid = false;
           error = `Limite de ${ticketType.maxPerUser} ingressos por pessoa para "${ticketType.name}". Você já possui ${userCurrentQuantity}. Disponível: ${userAvailableQuantity}`;
           validationErrors.push(error);
+        }
+      }
+
+      // Verificar limite por CPF no lote (maxPerCpf) se CPF foi fornecido
+      if (args.cpf && ticketType.lotId && !checkedLotIds.has(ticketType.lotId)) {
+        checkedLotIds.add(ticketType.lotId);
+        const lot = await ctx.db.get(ticketType.lotId);
+        if (lot?.maxPerCpf) {
+          const lotTicketTypes = await ctx.db
+            .query("ticketTypes")
+            .withIndex("by_event", (q) => q.eq("eventId", args.eventId))
+            .filter((q) => q.eq(q.field("lotId"), ticketType.lotId!))
+            .collect();
+          const lotTicketTypeIds = new Set(lotTicketTypes.map((tt) => tt._id));
+
+          const eventTransactions = await ctx.db
+            .query("transactions")
+            .withIndex("by_event", (q) => q.eq("eventId", args.eventId))
+            .filter((q) => q.eq(q.field("status"), "paid"))
+            .collect();
+
+          const normalizedCpf = args.cpf.replace(/\D/g, "");
+          let cpfTicketsInLot = 0;
+
+          for (const tx of eventTransactions) {
+            const txCpf = ((tx.metadata?.customerCpf as string) || "").replace(/\D/g, "");
+            if (txCpf === normalizedCpf) {
+              let txSelections: any[] = [];
+              try {
+                txSelections =
+                  typeof tx.metadata?.ticketSelections === "string"
+                    ? JSON.parse(tx.metadata.ticketSelections)
+                    : (tx.metadata?.ticketSelections || []);
+              } catch {}
+              for (const sel of txSelections) {
+                if (lotTicketTypeIds.has(sel.ticketTypeId)) {
+                  cpfTicketsInLot += sel.quantity || 0;
+                }
+              }
+            }
+          }
+
+          const requestedForLot = args.ticketSelections
+            .filter((s) => lotTicketTypeIds.has(s.ticketTypeId))
+            .reduce((sum, s) => sum + s.quantity, 0);
+
+          if (cpfTicketsInLot + requestedForLot > lot.maxPerCpf) {
+            const available = Math.max(0, lot.maxPerCpf - cpfTicketsInLot);
+            isValid = false;
+            error = `Limite de ${lot.maxPerCpf} ingresso${lot.maxPerCpf !== 1 ? "s" : ""} por CPF para o lote "${lot.name}". Você já possui ${cpfTicketsInLot}. Disponível: ${available}`;
+            validationErrors.push(error);
+          }
         }
       }
 

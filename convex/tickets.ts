@@ -1,23 +1,53 @@
 import { v } from "convex/values";
 import { Id } from "./_generated/dataModel";
-import { mutation, query } from "./_generated/server";
+import { mutation, query, type MutationCtx } from "./_generated/server";
+import {
+  normalizeCourtesyEmail,
+  PENDING_COURTESY_USER_ID,
+} from "./courtesyHelpers";
+import { incrementCouponUsageInCtx } from "./coupons";
 
-
-async function bumpEventTicketCounters(
-  ctx: any,
-  eventId: Id<"events">,
-  deltaSold: number,
-  deltaPaid: number
+/** Registra um uso de cupom por transação (idempotente via metadata.couponUsageRecorded). */
+async function recordCouponUseOnceForTransaction(
+  ctx: MutationCtx,
+  transactionId: string
 ) {
-  const event = await ctx.db.get(eventId);
-  if (!event) return;
-  const sold = (event as any).soldTicketsCount ?? 0;
-  const paid = (event as any).soldPaidTicketsCount ?? 0;
-  await ctx.db.patch(eventId, {
-    soldTicketsCount: Math.max(0, sold + deltaSold),
-    soldPaidTicketsCount: Math.max(0, paid + deltaPaid),
+  const tx = await ctx.db
+    .query("transactions")
+    .withIndex("by_transactionId", (q) => q.eq("transactionId", transactionId))
+    .first();
+  if (!tx?.eventId) return;
+
+  const meta = (tx.metadata || {}) as Record<string, any>;
+  if (meta.couponUsageRecorded === true) return;
+
+  const raw = meta.couponCode;
+  if (raw == null || String(raw).trim() === "") return;
+
+  const did = await incrementCouponUsageInCtx(ctx, {
+    eventId: tx.eventId,
+    couponCode: String(raw).trim(),
+  });
+
+  if (!did) return;
+
+  const latest = await ctx.db.get(tx._id);
+  await ctx.db.patch(tx._id, {
+    metadata: {
+      ...(latest?.metadata || {}),
+      couponUsageRecorded: true,
+    },
   });
 }
+
+/** Chamada por webhooks ou suporte para conciliar uso de cupom em transações já emitidas. */
+export const recordCouponUseForTransactionIfNeeded = mutation({
+  args: { transactionId: v.string() },
+  handler: async (ctx, { transactionId }) => {
+    await recordCouponUseOnceForTransaction(ctx, transactionId);
+    return { ok: true as const };
+  },
+});
 
 async function getEventAndValidator(ctx: any, eventId: Id<"events">, userId: string) {
   const event = await ctx.db.get(eventId);
@@ -131,6 +161,36 @@ export const getValidPaidTicketsForEvent = query({
         q.or(q.eq(q.field("status"), "valid"), q.eq(q.field("status"), "used"))
       )
       .collect();
+  },
+});
+
+export const getRecentBuyerIdsForEvent = query({
+  args: { eventId: v.id("events") },
+  handler: async (ctx, { eventId }) => {
+    const tickets = await ctx.db
+      .query("tickets")
+      .withIndex("by_event", (q) => q.eq("eventId", eventId))
+      .filter((q) =>
+        q.or(q.eq(q.field("status"), "valid"), q.eq(q.field("status"), "used"))
+      )
+      .order("desc")
+      .take(30);
+
+    const seen = new Set<string>();
+    const uniqueIds: string[] = [];
+    for (const ticket of tickets) {
+      if (
+        ticket.userId &&
+        ticket.userId !== "pending" &&
+        ticket.userId !== PENDING_COURTESY_USER_ID &&
+        !seen.has(ticket.userId)
+      ) {
+        seen.add(ticket.userId);
+        uniqueIds.push(ticket.userId);
+      }
+      if (uniqueIds.length >= 5) break;
+    }
+    return uniqueIds;
   },
 });
 
@@ -1183,7 +1243,8 @@ export const createTicketsFromTransaction = mutation({
       // Determinar o status inicial (padrão "valid" se não informado)
       const initialStatus = args.status === "pending_payment" ? "pending_payment" : "valid";
 
-      const metadata = transaction.metadata || {};
+      // Cópia mutável: pode ser atualizada se resetarmos ticketsCreated (ingressos removidos manualmente)
+      let metadata: Record<string, any> = { ...(transaction.metadata || {}) };
       const exportSummaryExisting: any | undefined = metadata.exportSummary;
       const needsExportSummaryPatch =
         args.rebuildExportSummary === true ||
@@ -1293,16 +1354,24 @@ export const createTicketsFromTransaction = mutation({
         });
       };
 
-      if ((transaction.metadata && (transaction.metadata as any).ticketsCreated) === true) {
-        const existingTickets = await ctx.db
+      if (metadata.ticketsCreated === true) {
+        const existingTicketsWhenFlagged = await ctx.db
           .query("tickets")
           .withIndex("by_transaction", (q) => q.eq("transactionId", args.transactionId))
           .collect();
-        await patchExportSummaryIfNeeded();
-        return {
-          success: true,
-          ticketIds: existingTickets.map((t) => t._id),
-        };
+        if (existingTicketsWhenFlagged.length > 0) {
+          await patchExportSummaryIfNeeded();
+          await recordCouponUseOnceForTransaction(ctx, args.transactionId);
+          return {
+            success: true,
+            ticketIds: existingTicketsWhenFlagged.map((t) => t._id),
+          };
+        }
+        // Flag ticketsCreated sem ingressos no DB (ex.: exclusão manual ou falha parcial): recriar
+        await ctx.db.patch(transaction._id, {
+          metadata: { ...metadata, ticketsCreated: false },
+        });
+        metadata = { ...metadata, ticketsCreated: false };
       }
 
       // Verificar se já existem tickets para esta transação (idempotência)
@@ -1314,6 +1383,7 @@ export const createTicketsFromTransaction = mutation({
       if (existingTickets.length > 0) {
         console.log('🔄 Tickets já existem para esta transação:', args.transactionId);
         await patchExportSummaryIfNeeded();
+        await recordCouponUseOnceForTransaction(ctx, args.transactionId);
         return { 
           success: true,
           ticketIds: existingTickets.map((t) => t._id)
@@ -1322,8 +1392,11 @@ export const createTicketsFromTransaction = mutation({
       
       // Buscar os detalhes do evento e seleções de tickets do metadata da transação
       const eventId = transaction.eventId;
-      const userId = transaction.userId;
-      
+      let ticketOwnerUserId = transaction.userId;
+      if (!ticketOwnerUserId || ticketOwnerUserId === "" || ticketOwnerUserId === "pending") {
+        ticketOwnerUserId = PENDING_COURTESY_USER_ID;
+      }
+
       // Buscar os tipos de tickets e quantidades do metadata
       let ticketSelections = [];
       
@@ -1342,12 +1415,26 @@ export const createTicketsFromTransaction = mutation({
         };
       }
       
-      if (!eventId || !userId || !ticketSelections || ticketSelections.length === 0) {
+      if (!eventId || !ticketSelections || ticketSelections.length === 0) {
         return {
           success: false,
           error: 'Dados insuficientes para criar tickets'
         };
       }
+
+      const rawBuyerEmail =
+        (typeof args.customerEmail === "string" && args.customerEmail.trim() !== "")
+          ? args.customerEmail
+          : (typeof metadata.email === "string" ? metadata.email :
+            typeof metadata.customerEmail === "string" ? metadata.customerEmail : "");
+      const normalizedBuyerEmail =
+        typeof rawBuyerEmail === "string" && rawBuyerEmail.trim() !== ""
+          ? normalizeCourtesyEmail(rawBuyerEmail)
+          : undefined;
+      const pendingRecipientForPurchase =
+        ticketOwnerUserId === PENDING_COURTESY_USER_ID && normalizedBuyerEmail
+          ? normalizedBuyerEmail
+          : undefined;
 
       // Pré-calcular um resumo leve para export (evita N+1 no relatório)
       // Mantemos somente agregados por transação (sem listar QR codes/tickets individuais)
@@ -1372,11 +1459,7 @@ export const createTicketsFromTransaction = mutation({
           ? args.customerName
           : (typeof metadata.name === "string" ? metadata.name :
             typeof metadata.customerName === "string" ? metadata.customerName : "");
-      const exportEmail =
-        (typeof args.customerEmail === "string" && args.customerEmail.trim() !== "")
-          ? args.customerEmail
-          : (typeof metadata.email === "string" ? metadata.email :
-            typeof metadata.customerEmail === "string" ? metadata.customerEmail : "");
+      const exportEmail = rawBuyerEmail;
       const exportCpfRaw =
         (typeof args.customerCpf === "string" && args.customerCpf.trim() !== "")
           ? args.customerCpf
@@ -1392,8 +1475,6 @@ export const createTicketsFromTransaction = mutation({
       
       // Criar os tickets
       const ticketIds = [];
-      let deltaSold = 0;
-      let deltaPaid = 0;
 
       const normalizedCpf =
         typeof args.customerCpf === "string" && args.customerCpf.trim() !== ""
@@ -1465,7 +1546,7 @@ export const createTicketsFromTransaction = mutation({
             const ticketId = await ctx.db.insert("tickets", {
               eventId,
               ticketTypeId: selection.ticketTypeId,
-              userId,
+              userId: ticketOwnerUserId,
               quantity: 1,
               unitPrice: ticketType.currentPrice / ticketsToCreate,
               totalAmount: (ticketType.currentPrice / ticketsToCreate) - (discountPerQrcode || 0),
@@ -1480,13 +1561,12 @@ export const createTicketsFromTransaction = mutation({
               passportUsesRemaining: ticketType.isPassport ? passportUses : undefined,
               validatedDayIds: ticketType.isPassport ? [] : undefined,
               passportEligibleDayIds: ticketType.isPassport ? eligibleDayIds : undefined,
+              ...(pendingRecipientForPurchase
+                ? { pendingRecipientEmail: pendingRecipientForPurchase }
+                : {}),
             });
             
             ticketIds.push(ticketId);
-            if (initialStatus === "valid") {
-              deltaSold += 1;
-              if ((ticketType.currentPrice / ticketsToCreate) > 0) deltaPaid += 1;
-            }
           }
         }
         
@@ -1515,9 +1595,7 @@ export const createTicketsFromTransaction = mutation({
         },
       });
 
-      if (initialStatus === "valid" && deltaSold > 0) {
-        await bumpEventTicketCounters(ctx, eventId, deltaSold, deltaPaid);
-      }
+      await recordCouponUseOnceForTransaction(ctx, args.transactionId);
 
       return { 
         success: true,

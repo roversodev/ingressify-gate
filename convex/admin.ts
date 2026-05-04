@@ -1906,7 +1906,8 @@ export const processWithdrawal = mutation({
         throw new Error("Este saque não está em processamento");
       }
 
-      if (!args.receiptStorageId) {
+      // Se for débito (padrão), exige comprovante. Se for crédito, não exige (pois o comprovante foi enviado na solicitação).
+      if (withdrawal.type !== 'credit' && !args.receiptStorageId) {
         throw new Error("É necessário anexar um comprovante");
       }
 
@@ -4463,21 +4464,39 @@ export const getAllTransactionsCursorPaginated = query({
     const effectiveEnd = endDate ?? Date.now();
     const effectiveStart = startDate ?? effectiveEnd - 30 * 24 * 60 * 60 * 1000;
 
-    const baseQuery = eventId
-      ? ctx.db
+    const pageSize = Math.max(1, Math.min(100, limit));
+
+    // Mesma regra de antes, mas com `.filter` na query (depois de `order`), não em cima do `page` —
+    // pós-filtrar o array pós-`paginate` esvaziava a página (muitas linhas = cortesia/R$0 no mesmo lote).
+    const pageResult = eventId
+      ? await ctx.db
           .query("transactions")
           .withIndex("by_event_created_at", (q) =>
             q.eq("eventId", eventId).gte("createdAt", effectiveStart).lte("createdAt", effectiveEnd),
           )
-      : ctx.db
+          .order("desc")
+          .filter((q) =>
+            q.and(
+              q.neq(q.field("amount"), 0),
+              q.neq(q.field("paymentMethod"), "free"),
+            ),
+          )
+          .paginate({ cursor: cursor ?? null, numItems: pageSize })
+      : await ctx.db
           .query("transactions")
-          .withIndex("by_created_at", (q) => q.gte("createdAt", effectiveStart).lte("createdAt", effectiveEnd));
+          .withIndex("by_created_at", (q) =>
+            q.gte("createdAt", effectiveStart).lte("createdAt", effectiveEnd),
+          )
+          .order("desc")
+          .filter((q) =>
+            q.and(
+              q.neq(q.field("amount"), 0),
+              q.neq(q.field("paymentMethod"), "free"),
+            ),
+          )
+          .paginate({ cursor: cursor ?? null, numItems: pageSize });
 
-    const pageResult = await baseQuery
-      .order("desc")
-      .paginate({ cursor: cursor ?? null, numItems: limit });
-
-    const pageItems = pageResult.page.filter((t) => !(t.paymentMethod === "free" || t.amount === 0));
+    const pageItems = pageResult.page;
 
     const eventIdsToFetch = Array.from(
       new Set(pageItems.map((t) => t.eventId as unknown as string)),
@@ -4724,5 +4743,481 @@ export const getPlatformAvailableBalance = query({
       totalPixAvailable: balances.totalPixAvailable,
       totalCardAvailable: balances.totalCardAvailable,
     };
+  },
+});
+
+
+
+
+function assertAdminCanManageUserRecords(admin: Doc<"platformAdmins">) {
+  if (admin.role === "superadmin") return;
+  const p = admin.permissions ?? [];
+  if (p.includes("*") || p.includes("manage_users")) return;
+  throw new Error(
+    "Sem permissão. É necessário gerenciar usuários para remover ingressos."
+  );
+}
+
+/** Ingressos de um usuário (userId Clerk) — painel admin */
+export const getTicketsByTargetUserIdAdmin = query({
+  args: {
+    userId: v.string(),
+    targetUserId: v.string(),
+    eventId: v.optional(v.id("events")),
+  },
+  handler: async (ctx, { userId, targetUserId, eventId }) => {
+    const admin = await ctx.db
+      .query("platformAdmins")
+      .withIndex("by_user_id", (q) => q.eq("userId", userId))
+      .filter((q) => q.eq(q.field("isActive"), true))
+      .first();
+
+    if (!admin) {
+      throw new Error("Acesso negado. Apenas administradores podem acessar esta função.");
+    }
+
+    const profile = await ctx.db
+      .query("users")
+      .withIndex("by_user_id", (q) => q.eq("userId", targetUserId))
+      .first();
+
+    let ticketsQuery = ctx.db
+      .query("tickets")
+      .withIndex("by_user", (q) => q.eq("userId", targetUserId));
+
+    if (eventId) {
+      ticketsQuery = ticketsQuery.filter((q) => q.eq(q.field("eventId"), eventId));
+    }
+
+    const tickets = await ticketsQuery.collect();
+
+    const ticketsWithDetails = [];
+    for (const ticket of tickets) {
+      const event = await ctx.db.get(ticket.eventId);
+      const ticketType = await ctx.db.get(ticket.ticketTypeId);
+
+      ticketsWithDetails.push({
+        ...ticket,
+        eventName: event?.name,
+        eventStartDate: event?.eventStartDate,
+        ticketTypeName: ticketType?.name,
+        userName: profile?.name,
+        userEmail: profile?.email,
+        userCpf: profile?.cpf,
+        formattedPurchaseDate: new Date(ticket.purchasedAt).toLocaleString("pt-BR"),
+        formattedAmount: ticket.totalAmount.toLocaleString("pt-BR", {
+          style: "currency",
+          currency: "BRL",
+        }),
+      });
+    }
+
+    ticketsWithDetails.sort((a: any, b: any) => (b.purchasedAt || 0) - (a.purchasedAt || 0));
+
+    return ticketsWithDetails;
+  },
+});
+
+/** Remove ingressos do banco (admin). Exige permissão de gerenciar usuários. */
+export const adminDeleteTickets = mutation({
+  args: {
+    userId: v.string(),
+    targetUserId: v.string(),
+    ticketIds: v.array(v.id("tickets")),
+    reason: v.optional(v.string()),
+  },
+  handler: async (ctx, { userId, targetUserId, ticketIds, reason }) => {
+    const admin = await ctx.db
+      .query("platformAdmins")
+      .withIndex("by_user_id", (q) => q.eq("userId", userId))
+      .filter((q) => q.eq(q.field("isActive"), true))
+      .first();
+
+    if (!admin) {
+      throw new Error("Acesso negado.");
+    }
+    assertAdminCanManageUserRecords(admin);
+
+    const deleted: string[] = [];
+    for (const ticketId of ticketIds) {
+      const ticket = await ctx.db.get(ticketId);
+      if (!ticket) continue;
+      if (ticket.userId !== targetUserId) {
+        throw new Error("Um dos ingressos não pertence a este usuário.");
+      }
+
+      const redemptions = await ctx.db
+        .query("ticketRedemptions")
+        .withIndex("by_ticket", (q) => q.eq("ticketId", ticketId))
+        .collect();
+      for (const r of redemptions) {
+        await ctx.db.delete(r._id);
+      }
+
+      const history = await ctx.db
+        .query("transferHistory")
+        .withIndex("by_ticket", (q) => q.eq("ticketId", ticketId))
+        .collect();
+      for (const h of history) {
+        await ctx.db.delete(h._id);
+      }
+
+      const requests = await ctx.db
+        .query("transferRequests")
+        .withIndex("by_ticket", (q) => q.eq("ticketId", ticketId))
+        .collect();
+      for (const req of requests) {
+        await ctx.db.delete(req._id);
+      }
+
+      await ctx.db.delete(ticketId);
+      deleted.push(ticketId);
+    }
+
+    if (deleted.length > 0) {
+      await ctx.db.insert("adminActivityLogs", {
+        adminId: userId,
+        action: "admin_delete_tickets",
+        targetType: "user",
+        targetId: targetUserId,
+        details: { ticketIds: deleted, reason: reason ?? "" },
+        timestamp: Date.now(),
+      });
+    }
+
+    return { deletedCount: deleted.length, deletedIds: deleted };
+  },
+});
+
+
+
+
+/**
+ * Visão agregada da conta: ingressos (origem, leituras), transações e presença em eventos.
+ */
+export const getUserAccountInsightAdmin = query({
+  args: {
+    userId: v.string(),
+    targetUserId: v.string(),
+  },
+  handler: async (ctx, { userId, targetUserId }) => {
+    const admin = await ctx.db
+      .query("platformAdmins")
+      .withIndex("by_user_id", (q) => q.eq("userId", userId))
+      .filter((q) => q.eq(q.field("isActive"), true))
+      .first();
+
+    if (!admin) {
+      throw new Error("Acesso negado. Apenas administradores podem acessar esta função.");
+    }
+
+    const profile = await ctx.db
+      .query("users")
+      .withIndex("by_user_id", (q) => q.eq("userId", targetUserId))
+      .first();
+
+    const txRows = await ctx.db
+      .query("transactions")
+      .withIndex("by_user_created_at", (q) => q.eq("userId", targetUserId))
+      .collect();
+
+    txRows.sort((a, b) => b.createdAt - a.createdAt);
+
+    const eventCache = new Map<string, any>();
+    const getEvent = async (eventId: any) => {
+      const key = String(eventId);
+      if (eventCache.has(key)) return eventCache.get(key);
+      const ev = await ctx.db.get(eventId);
+      eventCache.set(key, ev ?? null);
+      return ev ?? null;
+    };
+
+    const validatorCache = new Map<string, any>();
+    const getValidatorName = async (validatorUserId: string) => {
+      if (!validatorUserId) return undefined;
+      if (validatorCache.has(validatorUserId)) {
+        return validatorCache.get(validatorUserId)?.name;
+      }
+      const u = await ctx.db
+        .query("users")
+        .withIndex("by_user_id", (q) => q.eq("userId", validatorUserId))
+        .first();
+      validatorCache.set(validatorUserId, u ?? null);
+      return u?.name;
+    };
+
+    const transactionById = new Map<string, any>();
+    const loadTransaction = async (tid: string | undefined) => {
+      if (!tid) return null;
+      if (transactionById.has(tid)) return transactionById.get(tid);
+      const row = await ctx.db
+        .query("transactions")
+        .withIndex("by_transactionId", (q) => q.eq("transactionId", tid))
+        .first();
+      transactionById.set(tid, row ?? null);
+      return row ?? null;
+    };
+
+    const ticketsQuery = ctx.db
+      .query("tickets")
+      .withIndex("by_user", (q) => q.eq("userId", targetUserId));
+
+    const tickets = await ticketsQuery.collect();
+    tickets.sort((a, b) => b.purchasedAt - a.purchasedAt);
+
+    const enrichedTickets: any[] = [];
+    const presenceByEvent = new Map<
+      string,
+      {
+        eventId: string;
+        eventName: string;
+        eventStartDate?: number;
+        lastAttendedAt: number;
+        ticketIds: string[];
+        modes: Set<string>;
+      }
+    >();
+
+    for (const ticket of tickets) {
+      const event = await getEvent(ticket.eventId);
+      const ticketType = await ctx.db.get(ticket.ticketTypeId);
+
+      const tx = await loadTransaction(ticket.transactionId);
+
+      const redemptions = await ctx.db
+        .query("ticketRedemptions")
+        .withIndex("by_ticket", (q) => q.eq("ticketId", ticket._id))
+        .collect();
+
+      const scans: any[] = [];
+      for (const r of redemptions) {
+        const vName = await getValidatorName(r.validatorUserId);
+        scans.push({
+          _id: r._id,
+          redeemedAt: r.redeemedAt,
+          quantity: r.quantity,
+          validatorUserId: r.validatorUserId,
+          validatorName: vName ?? "Validador",
+        });
+      }
+
+      let validatorName: string | undefined;
+      if (ticket.validatedBy) {
+        validatorName = await getValidatorName(ticket.validatedBy);
+      }
+
+      let origin = "Sem transação vinculada";
+      if (tx) {
+        const pm = String(tx.paymentMethod || "").toUpperCase();
+        if (pm.includes("OFFLINE") || pm === "FREE" || pm.includes("COURTESY")) {
+          origin = "Manual / offline / cortesia";
+        } else if (pm.includes("PIX")) {
+          origin = "Compra — PIX";
+        } else if (pm.includes("CARD") || pm.includes("CREDIT")) {
+          origin = "Compra — cartão";
+        } else {
+          origin = `Compra — ${tx.paymentMethod || "pagamento"}`;
+        }
+      } else if (ticket.transactionId) {
+        origin = "Transação referenciada (não encontrada)";
+      }
+
+      const txEvent = tx ? await getEvent(tx.eventId) : null;
+
+      const row = {
+        ...ticket,
+        eventName: event?.name,
+        eventStartDate: event?.eventStartDate,
+        ticketTypeName: ticketType?.name,
+        userName: profile?.name,
+        userEmail: profile?.email,
+        userCpf: profile?.cpf,
+        formattedPurchaseDate: new Date(ticket.purchasedAt).toLocaleString("pt-BR"),
+        formattedAmount: ticket.totalAmount.toLocaleString("pt-BR", {
+          style: "currency",
+          currency: "BRL",
+        }),
+        origin,
+        transaction: tx
+          ? {
+              transactionId: tx.transactionId,
+              status: tx.status,
+              paymentMethod: tx.paymentMethod,
+              amount: tx.amount,
+              createdAt: tx.createdAt,
+              eventName: txEvent?.name,
+            }
+          : null,
+        scans,
+        validatorName,
+        formattedValidatedAt: ticket.validatedAt
+          ? new Date(ticket.validatedAt).toLocaleString("pt-BR")
+          : undefined,
+      };
+
+      enrichedTickets.push(row);
+
+      const eid = String(ticket.eventId);
+      const usedByStatus = ticket.status === "used";
+      const usedByScan = scans.length > 0;
+
+      if (usedByStatus || usedByScan) {
+        const times: number[] = [];
+        if (ticket.validatedAt) times.push(ticket.validatedAt);
+        for (const s of scans) times.push(s.redeemedAt);
+        const lastAttendedAt = times.length ? Math.max(...times) : ticket.purchasedAt;
+
+        const prev = presenceByEvent.get(eid);
+
+        if (!prev) {
+          const ms = new Set<string>();
+          if (usedByStatus) ms.add("status_usado");
+          if (usedByScan) ms.add("leitura_qr");
+          presenceByEvent.set(eid, {
+            eventId: eid,
+            eventName: event?.name ?? "Evento",
+            eventStartDate: event?.eventStartDate,
+            lastAttendedAt,
+            ticketIds: [String(ticket._id)],
+            modes: ms,
+          });
+        } else {
+          if (usedByStatus) prev.modes.add("status_usado");
+          if (usedByScan) prev.modes.add("leitura_qr");
+          prev.lastAttendedAt = Math.max(prev.lastAttendedAt, lastAttendedAt);
+          if (!prev.ticketIds.includes(String(ticket._id))) {
+            prev.ticketIds.push(String(ticket._id));
+          }
+        }
+      }
+    }
+
+    const transactionsOut = [];
+    for (const tx of txRows) {
+      const ev = await getEvent(tx.eventId);
+      transactionsOut.push({
+        transactionId: tx.transactionId,
+        status: tx.status,
+        paymentMethod: tx.paymentMethod,
+        amount: tx.amount,
+        createdAt: tx.createdAt,
+        eventId: String(tx.eventId),
+        eventName: ev?.name ?? "—",
+        formattedCreatedAt: new Date(tx.createdAt).toLocaleString("pt-BR"),
+        formattedAmount: tx.amount.toLocaleString("pt-BR", {
+          style: "currency",
+          currency: "BRL",
+        }),
+      });
+    }
+
+    const presence = Array.from(presenceByEvent.values())
+      .map((p) => ({
+        ...p,
+        modes: Array.from(p.modes),
+        formattedLastAttendedAt: new Date(p.lastAttendedAt).toLocaleString("pt-BR"),
+      }))
+      .sort((a, b) => b.lastAttendedAt - a.lastAttendedAt);
+
+    const stats = {
+      ticketCount: tickets.length,
+      usedCount: tickets.filter((t) => t.status === "used").length,
+      validCount: tickets.filter((t) => t.status === "valid").length,
+      refundedCount: tickets.filter((t) => t.status === "refunded").length,
+      cancelledCount: tickets.filter((t) => t.status === "cancelled").length,
+      transferedCount: tickets.filter((t) => t.status === "transfered").length,
+      transactionCount: txRows.length,
+      eventsAttendedCount: presence.length,
+    };
+
+    return {
+      profile: profile
+        ? {
+            name: profile.name,
+            email: profile.email,
+            phone: profile.phone,
+            cpf: profile.cpf,
+            userId: profile.userId,
+          }
+        : null,
+      stats,
+      tickets: enrichedTickets,
+      transactions: transactionsOut,
+      presence,
+    };
+  },
+});
+
+
+
+
+// Criar um ajuste manual de saque (Crédito ou Débito)
+export const createWithdrawalAdjustment = mutation({
+  args: {
+    userId: v.string(),
+    eventId: v.id("events"),
+    amount: v.number(), // Valor absoluto sempre positivo
+    type: v.union(v.literal("credit"), v.literal("debit")), // Tipo explícito
+    description: v.string(),
+    receiptStorageId: v.optional(v.id("_storage")),
+  },
+  handler: async (ctx, { userId, eventId, amount, type, description, receiptStorageId }) => {
+    // Verificar se o usuário é admin
+    const admin = await ctx.db
+      .query("platformAdmins")
+      .withIndex("by_user_id", (q) => q.eq("userId", userId))
+      .filter((q) => q.eq(q.field("isActive"), true))
+      .first();
+
+    if (!admin) {
+      throw new Error("Acesso não autorizado");
+    }
+
+    // Buscar o evento para obter a organização
+    const event = await ctx.db.get(eventId);
+    if (!event) {
+      throw new Error("Evento não encontrado");
+    }
+
+    if (!event.organizationId) {
+      throw new Error("Evento não possui organização vinculada");
+    }
+
+    // Lógica de Sinal para Withdrawals:
+    // O usuário quer que TODOS os valores no banco sejam POSITIVOS.
+    // A distinção de sinal será feita na hora da leitura/cálculo baseada no 'type'.
+    const finalAmount = Math.abs(amount);
+
+    // Criar o registro de saque/ajuste
+    const withdrawalId = await ctx.db.insert("organizationWithdrawals", {
+      organizationId: event.organizationId,
+      userId: userId, // ID do admin que criou
+      amount: finalAmount, // Sempre positivo
+      status: "completed", // Ajustes são imediatos
+      type: type, // 'credit' ou 'debit' define a operação
+      eventId: eventId,
+      receiptStorageId: receiptStorageId,
+      requestedAt: Date.now(),
+      processedAt: Date.now(),
+      notes: `${type === "credit" ? "Crédito" : "Débito"} Manual: ${description}`,
+    });
+
+    // Registrar log
+    await ctx.db.insert("adminActivityLogs", {
+      adminId: userId,
+      action: "create_withdrawal_adjustment",
+      targetType: "withdrawal",
+      targetId: withdrawalId,
+      details: {
+        eventId,
+        originalAmount: amount,
+        finalAmount,
+        description,
+        type
+      },
+      timestamp: Date.now(),
+    });
+
+    return withdrawalId;
   },
 });

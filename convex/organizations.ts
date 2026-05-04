@@ -1,8 +1,28 @@
 import { GenericId, v } from "convex/values";
 import { mutation, query } from "./_generated/server";
-import { Id } from "./_generated/dataModel";
+import { Doc, Id } from "./_generated/dataModel";
 import { feeCalculations } from "../lib/fees";
 const { calculateProducerAmount } = feeCalculations;
+
+/**
+ * Impacto no saldo disponível: débitos (saque) somam; créditos só após concluído reduzem (estorno na plataforma).
+ * `type` omitido = débito (compatível com registros antigos).
+ */
+export function netWithdrawalAmountForBalance(w: {
+  amount: number;
+  type?: "credit" | "debit";
+  status: string;
+}): number {
+  const isCredit = w.type === "credit";
+  if (isCredit) {
+    if (w.status === "completed") return -w.amount;
+    return 0;
+  }
+  if (w.status === "completed" || w.status === "processing" || w.status === "pending") {
+    return w.amount;
+  }
+  return 0;
+}
 // Criar uma nova organização
 export const createOrganization = mutation({
   args: {
@@ -739,25 +759,6 @@ export const getOrganizationById = query({
   },
 });
 
-/** Papel do usuário na organização (ex.: habilitar saque só para owner/admin no app) */
-export const getMyOrganizationMembership = query({
-  args: {
-    organizationId: v.id("organizations"),
-    userId: v.string(),
-  },
-  handler: async (ctx, args) => {
-    const membership = await ctx.db
-      .query("organizationMembers")
-      .withIndex("by_organization_user", (q) =>
-        q.eq("organizationId", args.organizationId).eq("userId", args.userId)
-      )
-      .filter((q) => q.eq(q.field("status"), "active"))
-      .first();
-    if (!membership) return null;
-    return { role: membership.role };
-  },
-});
-
 // Atualizar organização
 export const updateOrganization = mutation({
   args: {
@@ -920,15 +921,6 @@ export const requestWithdrawal = mutation({
 
       const selectedPixKey = organization.pixKeys[args.pixKeyIndex];
 
-      // Verificar se o valor é válido
-      if (args.amount < 90) { // Mínimo R$ 90,00
-        return {
-          success: false,
-          errorType: "INVALID_AMOUNT",
-          message: "Valor mínimo para saque é R$ 90,00"
-        };
-      }
-
       // Buscar eventos relevantes
       let eventsToProcess = [];
       if (args.eventId) {
@@ -993,9 +985,10 @@ export const requestWithdrawal = mutation({
 
       const previousWithdrawals = await withdrawalsQuery.collect();
 
-      const totalWithdrawn = previousWithdrawals
-        .filter(w => w.status === "completed" || w.status === "processing" || w.status === "pending")
-        .reduce((sum, w) => sum + w.amount, 0);
+      const totalWithdrawn = previousWithdrawals.reduce(
+        (sum, w) => sum + netWithdrawalAmountForBalance(w),
+        0
+      );
 
       // Calcular saldo final disponível
       const finalAvailableBalance = totalAvailable - totalWithdrawn;
@@ -1015,6 +1008,7 @@ export const requestWithdrawal = mutation({
         userId: args.userId,
         amount: args.amount,
         status: "pending",
+        type: "debit",
         pixKey: {
           keyType: selectedPixKey.keyType,
           key: selectedPixKey.key,
@@ -1076,17 +1070,28 @@ export const getOrganizationWithdrawals = query({
   },
 });
 
+/** Idade em anos a partir de birthDate (YYYY-MM-DD ou ISO). */
+function ageFromBirthDate(birthDateStr: string): number {
+  const birthDate = new Date(birthDateStr);
+  const today = new Date();
+  let age = today.getFullYear() - birthDate.getFullYear();
+  const monthDiff = today.getMonth() - birthDate.getMonth();
+  const dayDiff = today.getDate() - birthDate.getDate();
+  if (monthDiff < 0 || (monthDiff === 0 && dayDiff < 0)) age -= 1;
+  return age;
+}
+
 // Obter estatísticas demográficas dos compradores de ingressos da organização
+// Otimizado: 1) compradores únicos (Set), não 1 query users por ingresso; 2) leituras em lote com Promise.all
 export const getOrganizationDemographicStats = query({
   args: {
     organizationId: v.id("organizations"),
     userId: v.string(),
   },
   handler: async (ctx, args) => {
-    // Verificar se o usuário tem permissão para acessar a organização
     const membership = await ctx.db
       .query("organizationMembers")
-      .withIndex("by_organization_user", (q) => 
+      .withIndex("by_organization_user", (q) =>
         q.eq("organizationId", args.organizationId).eq("userId", args.userId)
       )
       .filter((q) => q.eq(q.field("status"), "active"))
@@ -1096,15 +1101,12 @@ export const getOrganizationDemographicStats = query({
       throw new Error("Sem permissão para acessar esta organização");
     }
 
-    // Buscar eventos da organização
     const events = await ctx.db
       .query("events")
       .withIndex("by_organization", (q) => q.eq("organizationId", args.organizationId))
       .collect();
 
-    // Inicializar estatísticas
     const stats = {
-      // Estatísticas por gênero
       genderStats: {
         male: 0,
         female: 0,
@@ -1112,7 +1114,6 @@ export const getOrganizationDemographicStats = query({
         prefer_not_to_say: 0,
         not_informed: 0,
       },
-      // Estatísticas por faixa etária
       ageStats: {
         under18: 0,
         age18to24: 0,
@@ -1122,95 +1123,83 @@ export const getOrganizationDemographicStats = query({
         age55plus: 0,
         not_informed: 0,
       },
-      // Total de compradores únicos
       uniqueBuyers: 0,
-      // Compradores com perfil completo
       buyersWithCompleteProfile: 0,
     };
 
-    // Conjunto para rastrear compradores únicos
-    const uniqueBuyerIds = new Set();
-    const buyersWithCompleteProfileIds = new Set();
+    const buyerUserIds = new Set<string>();
 
-    // Para cada evento, buscar os tickets e os compradores
     for (const event of events) {
-      // Buscar tickets válidos do evento
       const tickets = await ctx.db
         .query("tickets")
         .withIndex("by_event", (q) => q.eq("eventId", event._id))
-        .filter((q) => q.or(
-          q.eq(q.field("status"), "valid"),
-          q.eq(q.field("status"), "used")
-        ))
+        .filter((q) =>
+          q.or(q.eq(q.field("status"), "valid"), q.eq(q.field("status"), "used"))
+        )
         .collect();
 
-      // Para cada ticket, buscar informações do comprador
-      for (const ticket of tickets) {
-        const user = await ctx.db
-          .query("users")
-          .withIndex("by_user_id", (q) => q.eq("userId", ticket.userId))
-          .first();
-
-        if (user) {
-          // Adicionar ao conjunto de compradores únicos
-          uniqueBuyerIds.add(user.userId);
-
-          // Verificar se o perfil está completo
-          if (user.profileComplete) {
-            buyersWithCompleteProfileIds.add(user.userId);
-          }
-
-          // Contabilizar por gênero
-          if (user.gender) {
-            if (user.gender && user.gender in stats.genderStats) {
-              if (user.gender === 'male' || user.gender === 'female' || 
-                  user.gender === 'other' || user.gender === 'prefer_not_to_say') {
-                stats.genderStats[user.gender]++;
-              } else {
-                stats.genderStats.not_informed++;
-              }
-            } else {
-              stats.genderStats.not_informed++;
-            }
-          } else {
-            stats.genderStats.not_informed++;
-          }
-
-          // Contabilizar por faixa etária
-          if (user.birthDate) {
-            const birthDate = new Date(user.birthDate);
-            const today = new Date();
-            const age = today.getFullYear() - birthDate.getFullYear();
-            
-            // Ajustar se o aniversário ainda não ocorreu este ano
-            const monthDiff = today.getMonth() - birthDate.getMonth();
-            const dayDiff = today.getDate() - birthDate.getDate();
-            const adjustedAge = monthDiff < 0 || (monthDiff === 0 && dayDiff < 0) ? age - 1 : age;
-
-            // Classificar por faixa etária
-            if (adjustedAge < 18) {
-              stats.ageStats.under18++;
-            } else if (adjustedAge >= 18 && adjustedAge <= 24) {
-              stats.ageStats.age18to24++;
-            } else if (adjustedAge >= 25 && adjustedAge <= 34) {
-              stats.ageStats.age25to34++;
-            } else if (adjustedAge >= 35 && adjustedAge <= 44) {
-              stats.ageStats.age35to44++;
-            } else if (adjustedAge >= 45 && adjustedAge <= 54) {
-              stats.ageStats.age45to54++;
-            } else if (adjustedAge >= 55) {
-              stats.ageStats.age55plus++;
-            }
-          } else {
-            stats.ageStats.not_informed++;
-          }
+      for (const t of tickets) {
+        if (t.userId && typeof t.userId === "string") {
+          buyerUserIds.add(t.userId);
         }
       }
     }
 
-    // Atualizar contagens totais
-    stats.uniqueBuyers = uniqueBuyerIds.size;
-    stats.buyersWithCompleteProfile = buyersWithCompleteProfileIds.size;
+    stats.uniqueBuyers = buyerUserIds.size;
+
+    const ids = [...buyerUserIds];
+    const BATCH = 80;
+    let buyersWithCompleteProfile = 0;
+
+    const addGender = (user: Doc<"users"> | null) => {
+      if (!user) {
+        stats.genderStats.not_informed++;
+        return;
+      }
+      const g = user.gender;
+      if (g === "male" || g === "female" || g === "other" || g === "prefer_not_to_say") {
+        stats.genderStats[g]++;
+      } else if (g) {
+        stats.genderStats.not_informed++;
+      } else {
+        stats.genderStats.not_informed++;
+      }
+    };
+
+    const addAge = (user: Doc<"users"> | null) => {
+      if (!user || !user.birthDate) {
+        stats.ageStats.not_informed++;
+        return;
+      }
+      const adjustedAge = ageFromBirthDate(user.birthDate);
+      if (adjustedAge < 18) stats.ageStats.under18++;
+      else if (adjustedAge <= 24) stats.ageStats.age18to24++;
+      else if (adjustedAge <= 34) stats.ageStats.age25to34++;
+      else if (adjustedAge <= 44) stats.ageStats.age35to44++;
+      else if (adjustedAge <= 54) stats.ageStats.age45to54++;
+      else stats.ageStats.age55plus++;
+    };
+
+    for (let i = 0; i < ids.length; i += BATCH) {
+      const slice = ids.slice(i, i + BATCH);
+      const userDocs = await Promise.all(
+        slice.map((uid) =>
+          ctx.db
+            .query("users")
+            .withIndex("by_user_id", (q) => q.eq("userId", uid))
+            .first()
+        )
+      );
+
+      for (let j = 0; j < slice.length; j++) {
+        const user = userDocs[j];
+        if (user?.profileComplete) buyersWithCompleteProfile++;
+        addGender(user ?? null);
+        addAge(user ?? null);
+      }
+    }
+
+    stats.buyersWithCompleteProfile = buyersWithCompleteProfile;
 
     return stats;
   },
@@ -1478,6 +1467,7 @@ export const getOrganizationFinancialSummary = query({
       totalEarningsWithDiscount: 0,
       totalTicketsSold: 0,
       monthlyEarnings: {} as Record<string, number>,
+      offlineAdjustmentTotal: 0,
       paymentMethodStats: {
         card: {
           count: 0,
@@ -1549,9 +1539,131 @@ export const getOrganizationFinancialSummary = query({
         const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
         summary.monthlyEarnings[monthKey] = (summary.monthlyEarnings[monthKey] || 0) + sellerAmount;
       }
+
+      const allEventTxs = await ctx.db
+        .query("transactions")
+        .withIndex("by_event", (q) => q.eq("eventId", event._id))
+        .collect();
+      for (const tx of allEventTxs) {
+        if (
+          tx.paymentMethod === "OFFLINE_ADJUSTMENT" ||
+          tx.paymentMethod === "OFFLINE_ADJUSTMENT_REFUND"
+        ) {
+          summary.offlineAdjustmentTotal += tx.amount;
+        }
+      }
     }
 
     return summary;
+  },
+});
+
+/** Saldo líquido por evento (receita cartão+pix+offline − movimentação líquida de saques/créditos). */
+export const getOrganizationEventNetBalances = query({
+  args: {
+    organizationId: v.id("organizations"),
+    userId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const membership = await ctx.db
+      .query("organizationMembers")
+      .withIndex("by_organization_user", (q) =>
+        q.eq("organizationId", args.organizationId).eq("userId", args.userId)
+      )
+      .filter((q) => q.eq(q.field("status"), "active"))
+      .first();
+
+    if (!membership) {
+      throw new Error("Sem permissão para acessar esta organização");
+    }
+
+    const events = await ctx.db
+      .query("events")
+      .withIndex("by_organization", (q) => q.eq("organizationId", args.organizationId))
+      .collect();
+
+    const eventWithdrawals = await ctx.db
+      .query("organizationWithdrawals")
+      .withIndex("by_organization", (q) => q.eq("organizationId", args.organizationId))
+      .collect();
+
+    const results: {
+      eventId: Id<"events">;
+      name: string;
+      grossAvailable: number;
+      netWithdrawn: number;
+      netBalance: number;
+    }[] = [];
+
+    for (const event of events) {
+      let cardAvailable = 0;
+      let pixAvailable = 0;
+      let offlineAdjustment = 0;
+
+      const feeSettings = await ctx.db
+        .query("eventFeeSettings")
+        .withIndex("by_event", (q) => q.eq("eventId", event._id))
+        .first();
+
+      const transactions = await ctx.db
+        .query("transactions")
+        .withIndex("by_event", (q) => q.eq("eventId", event._id))
+        .filter((q) =>
+          q.or(
+            q.eq(q.field("status"), "paid"),
+            q.eq(q.field("status"), "charged_back")
+          )
+        )
+        .collect();
+
+      for (const transaction of transactions) {
+        if (transaction.status === "charged_back") continue;
+        const discountAmount = transaction.metadata?.discountAmount || 0;
+        const paymentMethod =
+          transaction.paymentMethod === "credit_card" || transaction.paymentMethod === "CARD"
+            ? "CARD"
+            : "PIX";
+        const sellerAmount = calculateProducerAmount(
+          transaction.metadata?.baseAmount || transaction.amount,
+          discountAmount,
+          paymentMethod,
+          feeSettings || undefined
+        );
+        if (paymentMethod === "CARD") cardAvailable += sellerAmount;
+        else pixAvailable += sellerAmount;
+      }
+
+      const allEventTxs = await ctx.db
+        .query("transactions")
+        .withIndex("by_event", (q) => q.eq("eventId", event._id))
+        .collect();
+      for (const tx of allEventTxs) {
+        if (
+          tx.paymentMethod === "OFFLINE_ADJUSTMENT" ||
+          tx.paymentMethod === "OFFLINE_ADJUSTMENT_REFUND"
+        ) {
+          offlineAdjustment += tx.amount;
+        }
+      }
+
+      const grossAvailable = cardAvailable + pixAvailable + offlineAdjustment;
+
+      const netWithdrawn = eventWithdrawals
+        .filter((w) => w.eventId === event._id)
+        .reduce((sum, w) => sum + netWithdrawalAmountForBalance(w), 0);
+
+      const netBalance = grossAvailable - netWithdrawn;
+
+      results.push({
+        eventId: event._id,
+        name: event.name,
+        grossAvailable,
+        netWithdrawn,
+        netBalance,
+      });
+    }
+
+    return { events: results };
   },
 });
 
@@ -1849,5 +1961,174 @@ export const getEventTransactionsPaginated = query({
       .take(args.limit || 50);
 
     return transactions;
+  },
+});
+
+
+/** Papel do usuário na organização (ex.: habilitar saque só para owner/admin no app) */
+export const getMyOrganizationMembership = query({
+  args: {
+    organizationId: v.id("organizations"),
+    userId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const membership = await ctx.db
+      .query("organizationMembers")
+      .withIndex("by_organization_user", (q) =>
+        q.eq("organizationId", args.organizationId).eq("userId", args.userId)
+      )
+      .filter((q) => q.eq(q.field("status"), "active"))
+      .first();
+    if (!membership) return null;
+    return { role: membership.role };
+  },
+});
+
+
+
+
+export const getOrganizationOfflineSalesSummary = query({
+  args: {
+    organizationId: v.id("organizations"),
+    userId: v.string(),
+    eventId: v.optional(v.id("events")),
+  },
+  handler: async (ctx, args) => {
+    const membership = await ctx.db
+      .query("organizationMembers")
+      .withIndex("by_organization_user", (q) =>
+        q.eq("organizationId", args.organizationId).eq("userId", args.userId)
+      )
+      .filter((q) => q.eq(q.field("status"), "active"))
+      .first();
+
+    if (!membership) {
+      throw new Error("Sem permissão para acessar esta organização");
+    }
+
+    let events;
+    if (args.eventId) {
+      const event = await ctx.db.get(args.eventId);
+      events = event && event.organizationId === args.organizationId ? [event] : [];
+    } else {
+      events = await ctx.db
+        .query("events")
+        .withIndex("by_organization", (q) => q.eq("organizationId", args.organizationId))
+        .collect();
+    }
+
+    const eventIds = events.map((e) => e._id);
+    if (eventIds.length === 0) {
+      return { totalAmount: 0, count: 0, totalTickets: 0, totalPaidTickets: 0 };
+    }
+
+    let totalAmount = 0;
+    let count = 0;
+    let totalTickets = 0;
+    let totalPaidTickets = 0;
+
+    for (const eventId of eventIds) {
+      const sales = await ctx.db
+        .query("offlineSales")
+        .withIndex("by_event", (q) => q.eq("eventId", eventId))
+        .filter((q) => q.or(q.eq(q.field("status"), "recorded"), q.eq(q.field("status"), "settled")))
+        .collect();
+
+      count += sales.length;
+      for (const s of sales) {
+        totalAmount += s.totalAmount || 0;
+        totalTickets += s.quantity || 0;
+        if (s.unitPrice > 0) {
+          totalPaidTickets += s.quantity || 0;
+        }
+      }
+    }
+
+    return { totalAmount, count, totalTickets, totalPaidTickets };
+  },
+});
+
+
+
+// Solicitar crédito (depósito) para organização
+export const requestCredit = mutation({
+  args: {
+    organizationId: v.id("organizations"),
+    userId: v.string(),
+    amount: v.number(),
+    description: v.string(),
+    receiptStorageId: v.id("_storage"),
+    eventId: v.id("events"),
+  },
+  handler: async (ctx, args) => {
+    try {
+      // Verificar se o usuário tem permissão (owner ou admin)
+      const membership = await ctx.db
+        .query("organizationMembers")
+        .withIndex("by_organization_user", (q) =>
+          q.eq("organizationId", args.organizationId).eq("userId", args.userId)
+        )
+        .filter((q) =>
+          q.eq(q.field("status"), "active")
+        )
+        .first();
+
+      if (!membership) {
+        return {
+          success: false,
+          errorType: "NOT_MEMBER",
+          message: "Você não é membro desta organização"
+        };
+      }
+
+      if (membership.role !== "owner" && membership.role !== "admin") {
+        return {
+          success: false,
+          errorType: "INSUFFICIENT_PERMISSION",
+          message: "Apenas proprietários e administradores podem solicitar créditos"
+        };
+      }
+
+      const event = await ctx.db.get(args.eventId);
+      if (!event || event.organizationId !== args.organizationId) {
+        return {
+          success: false,
+          errorType: "INVALID_EVENT",
+          message: "Evento inválido ou não pertence à organização",
+        };
+      }
+
+      // Verificar se o valor é válido
+      if (args.amount <= 0) {
+        return {
+          success: false,
+          errorType: "INVALID_AMOUNT",
+          message: "O valor deve ser maior que zero"
+        };
+      }
+
+      // Criar solicitação de crédito (com valor positivo, o tipo 'credit' define a lógica)
+      
+      const withdrawalId = await ctx.db.insert("organizationWithdrawals", {
+        organizationId: args.organizationId,
+        userId: args.userId,
+        amount: Math.abs(args.amount), // Salvar valor absoluto
+        status: "pending",
+        type: "credit",
+        notes: args.description,
+        receiptStorageId: args.receiptStorageId,
+        requestedAt: Date.now(),
+        eventId: args.eventId,
+      });
+
+      return { success: true, withdrawalId };
+    } catch (error) {
+      console.error('Erro interno na solicitação de crédito:', error);
+      return {
+        success: false,
+        errorType: 'INTERNAL_ERROR',
+        message: 'Erro interno do servidor'
+      };
+    }
   },
 });

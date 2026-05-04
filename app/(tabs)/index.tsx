@@ -278,7 +278,12 @@ export default function EventsScreen() {
     );
   }
 
-  if ((!sellerEvents || sellerEvents.length === 0) && (!validatorEvents || validatorEvents.length === 0)) {
+  if (
+    (!sellerEvents || sellerEvents.length === 0) &&
+    (!validatorEvents || validatorEvents.length === 0) &&
+    !hasPendingInvites &&
+    !invitesLoading
+  ) {
     return (
       <SafeAreaView className="flex-1 justify-center items-center bg-background px-8">
          <Header showLogo={true} />

@@ -15,6 +15,9 @@ export default defineSchema({
     eventStartDate: v.number(),
     eventEndDate: v.number(),
     salesDeadline: v.optional(v.number()),
+    showScarcityIndicator: v.optional(v.boolean()),
+    /** Exibe avatares dos últimos compradores (foto Clerk) na página do evento */
+    showConfirmedBuyersAvatars: v.optional(v.boolean()),
     userId: v.string(),
     organizationId: v.optional(v.id("organizations")),
     imageStorageId: v.optional(v.id("_storage")),
@@ -42,6 +45,36 @@ export default defineSchema({
       searchField: "name",
       filterFields: ["description", "location"]
     }),
+
+  /** Acessos à página pública de venda (/event/[slug]/tickets), um registro por carregamento (deduplicado no cliente por sessão). */
+  eventSalesPageVisits: defineTable({
+    eventId: v.id("events"),
+    visitedAt: v.number(),
+  })
+    .index("by_event_visitedAt", ["eventId", "visitedAt"]),
+
+  /** Heartbeat de abas na página /tickets (último ping recente = “ao vivo”). */
+  eventSalesPagePresence: defineTable({
+    eventId: v.id("events"),
+    clientId: v.string(),
+    lastPing: v.number(),
+  })
+    .index("by_event_client", ["eventId", "clientId"])
+    .index("by_event_lastPing", ["eventId", "lastPing"]),
+
+  /**
+   * Política singleton: versão mínima do cliente (app.json version / nativeApplicationVersion).
+   * Mantém no máximo um documento; use appVersionPolicy.setPolicy.
+   */
+  clientAppVersionPolicy: defineTable({
+    minIosVersion: v.string(),
+    minAndroidVersion: v.string(),
+    minWebVersion: v.string(),
+    storeUrlIos: v.string(),
+    storeUrlAndroid: v.string(),
+    message: v.optional(v.string()),
+    updatedAt: v.number(),
+  }),
 
   ticketTypes: defineTable({
     eventId: v.id("events"),
@@ -263,9 +296,15 @@ export default defineSchema({
     passportUsesRemaining: v.optional(v.number()),
     validatedDayIds: v.optional(v.array(v.id("eventDays"))),
     passportEligibleDayIds: v.optional(v.array(v.id("eventDays"))),
+    /** Quem enviou a cortesia (organizador / membro da org) */
+    courtesySentByUserId: v.optional(v.string()),
+    courtesySentByName: v.optional(v.string()),
+    /** E-mail normalizado do destinatário enquanto não há conta (userId = pending) */
+    pendingRecipientEmail: v.optional(v.string()),
   })
     .index("by_event", ["eventId"])
     .index("by_user", ["userId"])
+    .index("by_pending_recipient_email", ["pendingRecipientEmail"])
     .index("by_user_event", ["userId", "eventId"])
     .index("by_ticket_type", ["ticketTypeId"])
     .index("by_payment_intent", ["paymentIntentId"])
@@ -307,7 +346,8 @@ export default defineSchema({
     .index("by_user", ["userId"])
     .index("by_status", ["status"])
     .index("by_status_createdAt", ["status", "createdAt"])
-    .index("by_amount", ["amount"]),
+    .index("by_amount", ["amount"])
+    .index("by_user_created_at", ["userId", "createdAt"]),
 
 
   users: defineTable({
@@ -369,23 +409,25 @@ export default defineSchema({
     .index("by_status", ["status"])
     .index("by_requested_at", ["requestedAt"]),
 
-  transferRequests: defineTable({
-    ticketId: v.id("tickets"),
-    fromUserId: v.string(),
-    toUserEmail: v.string(),
-    toUserId: v.optional(v.string()),
-    status: v.union(
-      v.literal("pending"),
-      v.literal("accepted"),
-      v.literal("cancelled"),
-      v.literal("expired")
-    ),
-    transferToken: v.string(),
-    createdAt: v.number(),
-    expiresAt: v.number(),
-    acceptedAt: v.optional(v.number()),
-    cancelledAt: v.optional(v.number()),
-  })
+    transferRequests: defineTable({
+      ticketId: v.id("tickets"),
+      fromUserId: v.string(),
+      toUserEmail: v.string(),
+      toUserId: v.optional(v.string()),
+      // Para passaporte: dia específico transferido (quando aplicável)
+      transferDayId: v.optional(v.id("eventDays")),
+      status: v.union(
+        v.literal("pending"),
+        v.literal("accepted"),
+        v.literal("cancelled"),
+        v.literal("expired")
+      ),
+      transferToken: v.string(),
+      createdAt: v.number(),
+      expiresAt: v.number(),
+      acceptedAt: v.optional(v.number()),
+      cancelledAt: v.optional(v.number()),
+    })
     .index("by_ticket", ["ticketId"])
     .index("by_from_user", ["fromUserId"])
     .index("by_to_email", ["toUserEmail"])
@@ -541,7 +583,7 @@ export default defineSchema({
       v.literal("failed"),
       v.literal("cancelled")
     ),
-    pixKey: v.object({
+    pixKey: v.optional(v.object({
       keyType: v.union(
         v.literal("cpf"),
         v.literal("cnpj"),
@@ -551,18 +593,20 @@ export default defineSchema({
       ),
       key: v.string(),
       description: v.optional(v.string()),
-    }),
+    })),
     requestedAt: v.number(),
     processedAt: v.optional(v.number()),
     failureReason: v.optional(v.string()),
     transactionId: v.optional(v.string()),
     eventId: v.optional(v.id("events")),
+    type: v.optional(v.union(v.literal("credit"), v.literal("debit"))),
     receiptStorageId: v.optional(v.id("_storage")),
     notes: v.optional(v.string())
   })
     .index("by_organization", ["organizationId"])
     .index("by_status", ["status"])
-    .index("by_requested_at", ["requestedAt"]),
+    .index("by_requested_at", ["requestedAt"])
+    .index("by_event", ["eventId"]),
 
   platformAdmins: defineTable({
     userId: v.string(),
@@ -783,4 +827,51 @@ export default defineSchema({
     .index("by_email", ["customerEmail"])
     .index("by_updated_at", ["lastUpdatedAt"])
     .index("by_status", ["status"]),
+
+
+  /** Solicitações de push notification criadas por produtores vinculados a eventos. */
+  pushNotificationRequests: defineTable({
+    title: v.string(),
+    message: v.string(),
+    imageUrl: v.optional(v.string()),
+    actionUrl: v.optional(v.string()),
+    eventId: v.id("events"),
+    createdByUserId: v.string(),
+    createdByName: v.optional(v.string()),
+    fee: v.number(),
+    organizationWithdrawalId: v.optional(v.id("organizationWithdrawals")),
+    targetType: v.union(
+      v.literal("event_buyers"),
+      v.literal("event_checkins"),
+      v.literal("all_app"),
+    ),
+    scheduledFor: v.optional(v.number()),
+    status: v.union(
+      v.literal("pending"),
+      v.literal("approved"),
+      v.literal("rejected"),
+      v.literal("sending"),
+      v.literal("sent"),
+      v.literal("cancelled"),
+      v.literal("failed"),
+    ),
+    approvedByUserId: v.optional(v.string()),
+    approvedAt: v.optional(v.number()),
+    rejectedByUserId: v.optional(v.string()),
+    rejectedReason: v.optional(v.string()),
+    rejectedAt: v.optional(v.number()),
+    sentAt: v.optional(v.number()),
+    oneSignalNotificationId: v.optional(v.string()),
+    recipientCount: v.optional(v.number()),
+    targetedUserIds: v.optional(v.array(v.string())),
+    targetedUserCount: v.optional(v.number()),
+    deviceCount: v.optional(v.number()),
+    failureReason: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_event", ["eventId"])
+    .index("by_status", ["status"])
+    .index("by_created_at", ["createdAt"])
+    .index("by_created_by", ["createdByUserId"]),
 });

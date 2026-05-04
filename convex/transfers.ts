@@ -1,15 +1,16 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import { internal } from "./_generated/api";
+import { Id } from "./_generated/dataModel";
 
-// Criar solicitação de transferência
 export const createTransferRequest = mutation({
   args: {
     ticketId: v.id("tickets"),
     toUserEmail: v.string(),
     fromUserId: v.string(), // Adicionar o userId do remetente
+    transferDayId: v.optional(v.id("eventDays")),
   },
-  handler: async (ctx, { ticketId, toUserEmail, fromUserId }) => {
+  handler: async (ctx, { ticketId, toUserEmail, fromUserId, transferDayId }) => {
     // Verificar se o ticket pertence ao usuário
     const ticket = await ctx.db.get(ticketId);
 
@@ -39,6 +40,33 @@ export const createTransferRequest = mutation({
         message: 'Você não pode transferir este ticket',
         ticket
       };
+    }
+
+    const isPassport = Array.isArray(ticket.passportEligibleDayIds) && ticket.passportEligibleDayIds.length > 0;
+    if (transferDayId) {
+      if (!isPassport) {
+        return {
+          success: false,
+          errorType: "INVALID_TRANSFER_DAY",
+          message: "Este ingresso não permite transferência por dia",
+        };
+      }
+      const eligibleDays = new Set((ticket.passportEligibleDayIds || []).map((id) => String(id)));
+      const validatedDays = new Set((ticket.validatedDayIds || []).map((id) => String(id)));
+      if (!eligibleDays.has(String(transferDayId))) {
+        return {
+          success: false,
+          errorType: "INVALID_TRANSFER_DAY",
+          message: "Dia selecionado não pertence a este passaporte",
+        };
+      }
+      if (validatedDays.has(String(transferDayId))) {
+        return {
+          success: false,
+          errorType: "TRANSFER_DAY_ALREADY_USED",
+          message: "Este dia do passaporte já foi utilizado/transferido",
+        };
+      }
     }
 
     // Verificar se o evento permite transferências
@@ -117,6 +145,7 @@ export const createTransferRequest = mutation({
         fromUserId,
         toUserId: toUser.userId,
         toUserEmail,
+        ...(transferDayId ? { transferDayId } : {}),
         transferToken,
         status: "pending",
         expiresAt,
@@ -657,11 +686,35 @@ export const getAcceptedTransferForTicket = query({
 export const getTransferHistoryForTicket = query({
   args: { ticketId: v.id("tickets") },
   handler: async (ctx, { ticketId }) => {
-    const history = await ctx.db
+    // Tenta encontrar no histórico (para o destinatário, onde ticketId é o novo ticket)
+    let history = await ctx.db
       .query("transferHistory")
       .withIndex("by_ticket", (q) => q.eq("ticketId", ticketId))
       .first();
     
+    // Se não encontrou no histórico, pode ser que este seja o ticket original (remetente)
+    // Nesse caso, procuramos na tabela de solicitações de transferência
+    if (!history) {
+      const request = await ctx.db
+        .query("transferRequests")
+        .withIndex("by_ticket", (q) => q.eq("ticketId", ticketId))
+        .filter((q) => q.eq(q.field("status"), "accepted"))
+        .first();
+
+      if (request) {
+        // Simulamos o objeto de histórico com os dados da solicitação
+        history = {
+          _id: request._id as unknown as Id<"transferHistory">, // Mock ID
+          _creationTime: request._creationTime,
+          ticketId: request.ticketId,
+          fromUserId: request.fromUserId,
+          toUserId: request.toUserId!,
+          transferredAt: request.acceptedAt!,
+          transferRequestId: request._id,
+        };
+      }
+    }
+
     if (!history) return null;
     
     // Buscar informações do usuário que fez a transferência
@@ -669,10 +722,17 @@ export const getTransferHistoryForTicket = query({
       .query("users")
       .withIndex("by_user_id", (q) => q.eq("userId", history.fromUserId))
       .first();
+
+    // Buscar informações do usuário que recebeu a transferência
+    const toUser = await ctx.db
+      .query("users")
+      .withIndex("by_user_id", (q) => q.eq("userId", history.toUserId))
+      .first();
     
     return {
       ...history,
-      fromUserName: fromUser?.name || "Usuário desconhecido"
+      fromUserName: fromUser?.name || "Usuário desconhecido",
+      toUserEmail: toUser?.email || "Email desconhecido"
     };
   },
 });
@@ -798,4 +858,25 @@ export const getEventTransferDetails = query({
       completedTransfers: eventTransferHistory.sort((a, b) => b.transferredAt - a.transferredAt)
     };
   }
+});
+
+// Para passaporte: listar dias transferidos (aceitos) e destinatários
+export const getAcceptedTransfersForTicket = query({
+  args: { ticketId: v.id("tickets") },
+  handler: async (ctx, { ticketId }) => {
+    const accepted = await ctx.db
+      .query("transferRequests")
+      .withIndex("by_ticket", (q) => q.eq("ticketId", ticketId))
+      .filter((q) => q.eq(q.field("status"), "accepted"))
+      .collect();
+
+    // Mantém apenas transferências por dia (passaporte)
+    return accepted
+      .filter((r) => !!r.transferDayId)
+      .map((r) => ({
+        transferDayId: r.transferDayId!,
+        toUserEmail: r.toUserEmail,
+        acceptedAt: r.acceptedAt ?? null,
+      }));
+  },
 });

@@ -1,5 +1,50 @@
 import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import type { Id } from "./_generated/dataModel";
+import { mutation, query, type MutationCtx } from "./_generated/server";
+
+/**
+ * Incrementa `currentUses` do cupom no mesmo contexto de uma mutation
+ * (ex.: criação de ingressos aprovada). Usar em vez de chamar a mutation
+ * pública a partir de outra mutation.
+ */
+export async function incrementCouponUsageInCtx(
+  ctx: MutationCtx,
+  { eventId, couponCode }: { eventId: Id<"events">; couponCode: string }
+): Promise<boolean> {
+  const code = String(couponCode).trim();
+  if (!code) return false;
+
+  let coupon = await ctx.db
+    .query("coupons")
+    .withIndex("by_event_code", (q) =>
+      q.eq("eventId", eventId).eq("code", code)
+    )
+    .first();
+
+  if (!coupon) {
+    const lower = code.toLowerCase();
+    const candidates = await ctx.db
+      .query("coupons")
+      .withIndex("by_event", (q) => q.eq("eventId", eventId))
+      .collect();
+    coupon =
+      candidates.find((c) => c.code.toLowerCase() === lower) ?? null;
+  }
+
+  if (!coupon) {
+    console.log(`Cupom não encontrado: ${code} para evento ${eventId}`);
+    return false;
+  }
+
+  await ctx.db.patch(coupon._id, {
+    currentUses: coupon.currentUses + 1,
+  });
+
+  console.log(
+    `✅ Uso do cupom ${coupon.code} incrementado. Usos atuais: ${coupon.currentUses + 1}`
+  );
+  return true;
+}
 
 // Criar cupom
 export const createCoupon = mutation({
@@ -231,23 +276,7 @@ export const incrementCouponUsage = mutation({
     couponCode: v.string() 
   },
   handler: async (ctx, { eventId, couponCode }) => {
-    const coupon = await ctx.db
-      .query("coupons")
-      .withIndex("by_event_code", (q) => 
-        q.eq("eventId", eventId).eq("code", couponCode)
-      )
-      .first();
-
-    if (!coupon) {
-      console.log(`Cupom não encontrado: ${couponCode} para evento ${eventId}`);
-      return;
-    }
-
-    await ctx.db.patch(coupon._id, {
-      currentUses: coupon.currentUses + 1,
-    });
-
-    console.log(`✅ Uso do cupom ${couponCode} incrementado. Usos atuais: ${coupon.currentUses + 1}`);
+    await incrementCouponUsageInCtx(ctx, { eventId, couponCode });
   },
 });
 

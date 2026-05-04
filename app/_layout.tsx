@@ -230,6 +230,10 @@ function InitialLayout() {
             headerShown: false,
           }}
         />
+        <Stack.Screen
+          name="change-password"
+          options={{ headerShown: false, animation: 'slide_from_right', gestureEnabled: true }}
+        />
         <Stack.Screen name="+not-found" />
       </Stack>
     </ErrorBoundary>

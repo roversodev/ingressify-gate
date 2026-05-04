@@ -1,5 +1,80 @@
 import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import {
+  internalMutation,
+  mutation,
+  query,
+  type MutationCtx,
+} from "./_generated/server";
+import type { Id } from "./_generated/dataModel";
+import {
+  normalizeCourtesyEmail,
+  PENDING_COURTESY_USER_ID,
+} from "./courtesyHelpers";
+
+/** Cortesias / checkout sem conta: userId = PENDING_COURTESY_USER_ID + pendingRecipientEmail. */
+async function claimPendingTicketsForEmail(
+  ctx: { db: MutationCtx["db"] },
+  clerkUserId: string,
+  normalizedEmail: string
+) {
+  if (!normalizedEmail) return;
+
+  const pendingTickets = await ctx.db
+    .query("tickets")
+    .withIndex("by_pending_recipient_email", (q) =>
+      q.eq("pendingRecipientEmail", normalizedEmail)
+    )
+    .collect();
+
+  for (const t of pendingTickets) {
+    if (t.userId !== PENDING_COURTESY_USER_ID) continue;
+    await ctx.db.patch(t._id, {
+      userId: clerkUserId,
+      pendingRecipientEmail: undefined,
+    });
+  }
+}
+
+/**
+ * Upsert em `users` (Clerk) + vincular tickets com `pendingRecipientEmail` igual ao e-mail normalizado.
+ * Usado pelo app (`updateUser`) e pelo webhook Clerk (`syncFromClerkWebhook`).
+ */
+async function upsertClerkUserAndClaimPendingTickets(
+  ctx: MutationCtx,
+  {
+    userId,
+    name,
+    email,
+  }: { userId: string; name: string; email: string }
+): Promise<Id<"users"> | null> {
+  const normalizedEmail = normalizeCourtesyEmail(email);
+  if (!normalizedEmail) {
+    return null;
+  }
+
+  const existingUser = await ctx.db
+    .query("users")
+    .withIndex("by_user_id", (q) => q.eq("userId", userId))
+    .first();
+
+  let docId: Id<"users">;
+  if (existingUser) {
+    await ctx.db.patch(existingUser._id, {
+      name,
+      email: normalizedEmail,
+    });
+    docId = existingUser._id;
+  } else {
+    docId = await ctx.db.insert("users", {
+      userId,
+      name,
+      email: normalizedEmail,
+    });
+  }
+
+  await claimPendingTicketsForEmail(ctx, userId, normalizedEmail);
+  return docId;
+}
 
 export const updateUser = mutation({
   args: {
@@ -8,29 +83,27 @@ export const updateUser = mutation({
     email: v.string(),
   },
   handler: async (ctx, { userId, name, email }) => {
-    // Check if user exists
-    const existingUser = await ctx.db
-      .query("users")
-      .withIndex("by_user_id", (q) => q.eq("userId", userId))
-      .first();
-
-    if (existingUser) {
-      // Update existing user
-      await ctx.db.patch(existingUser._id, {
-        name,
-        email,
-      });
-      return existingUser._id;
-    }
-
-    // Create new user
-    const newUserId = await ctx.db.insert("users", {
+    const docId = await upsertClerkUserAndClaimPendingTickets(ctx, {
       userId,
       name,
       email,
     });
+    if (!docId) {
+      throw new Error("E-mail inválido");
+    }
+    return docId;
+  },
+});
 
-    return newUserId;
+/** Chamado pelos webhooks do Clerk (HTTP) — não exposto ao cliente. */
+export const syncFromClerkWebhook = internalMutation({
+  args: {
+    userId: v.string(),
+    name: v.string(),
+    email: v.string(),
+  },
+  handler: async (ctx, args) => {
+    return await upsertClerkUserAndClaimPendingTickets(ctx, args);
   },
 });
 
@@ -49,9 +122,10 @@ export const getUserById = query({
 export const checkUserExistsByEmail = query({
   args: { email: v.string() },
   handler: async (ctx, { email }) => {
+    const normalized = normalizeCourtesyEmail(email);
     const user = await ctx.db
       .query("users")
-      .withIndex("by_email", (q) => q.eq("email", email))
+      .withIndex("by_email", (q) => q.eq("email", normalized))
       .first();
     
     return {
@@ -66,13 +140,34 @@ export const checkUserExistsByEmail = query({
   },
 });
 
+/** Valida vários e-mails de uma vez (cortesias em lote). Máx. 500 únicos por chamada. */
+export const checkEmailsExistBatch = query({
+  args: { emails: v.array(v.string()) },
+  handler: async (ctx, { emails }) => {
+    const unique = [...new Set(emails.map((e) => normalizeCourtesyEmail(e)).filter(Boolean))].slice(
+      0,
+      500
+    );
+    const missing: string[] = [];
+    for (const email of unique) {
+      const user = await ctx.db
+        .query("users")
+        .withIndex("by_email", (q) => q.eq("email", email))
+        .first();
+      if (!user) missing.push(email);
+    }
+    return { missing, checkedUnique: unique.length };
+  },
+});
+
 // Query específica para buscar informações completas do usuário por email
 export const getUserInfoByEmail = query({
   args: { email: v.string() },
   handler: async (ctx, { email }) => {
+    const normalized = normalizeCourtesyEmail(email);
     const user = await ctx.db
       .query("users")
-      .withIndex("by_email", (q) => q.eq("email", email))
+      .withIndex("by_email", (q) => q.eq("email", normalized))
       .first();
     
     if (!user) {
@@ -159,6 +254,10 @@ export const updateCustomerData = mutation({
 
     // Atualizar apenas os campos fornecidos
     await ctx.db.patch(existingUser._id, updateData);
+
+    if (email !== undefined && email.trim() !== "") {
+      await claimPendingTicketsForEmail(ctx, userId, normalizeCourtesyEmail(email));
+    }
 
     return { success: true, updatedFields: Object.keys(updateData) };
   },
@@ -265,6 +364,14 @@ export const updateUserProfile = mutation({
       profileComplete: isComplete,
     });
 
+    if (args.email !== undefined && args.email.trim() !== "") {
+      await claimPendingTicketsForEmail(
+        ctx,
+        userId,
+        normalizeCourtesyEmail(args.email)
+      );
+    }
+
     return { success: true, profileComplete: isComplete };
   },
 });
@@ -324,26 +431,32 @@ export const checkCpfExists = query({
     userId: v.optional(v.string()) // Opcional para ignorar o próprio usuário na verificação
   },
   handler: async (ctx, { cpf, userId }) => {
-    // Remove caracteres não numéricos
     const cleanCpf = cpf.replace(/\D/g, "");
-    
-    // Busca usuários com este CPF
-    const users = await ctx.db
+
+    // Evita round-trip ao DB para input incompleto (quem errar deve passar igual)
+    if (cleanCpf.length !== 11) {
+      return { exists: false, message: "CPF incompleto" };
+    }
+
+    // Índice by_cpf: O(1) documentos esperados vs .filter()+.collect() (scan na tabela)
+    const docs = await ctx.db
       .query("users")
-      .filter((q) => q.eq(q.field("cpf"), cleanCpf))
-      .collect();
-    
-    // Se não encontrou nenhum, o CPF está disponível
-    if (users.length === 0) {
+      .withIndex("by_cpf", (q) => q.eq("cpf", cleanCpf))
+      .take(2);
+
+    if (docs.length === 0) {
       return { exists: false, message: "CPF disponível" };
     }
-    
-    // Se encontrou apenas 1 e é o próprio usuário, o CPF está disponível
-    if (users.length === 1 && userId && users[0].userId === userId) {
+
+    // Duplicidade anômala no banco ou conflito
+    if (docs.length >= 2) {
+      return { exists: true, message: "CPF já cadastrado por outro usuário" };
+    }
+
+    if (userId && docs[0].userId === userId) {
       return { exists: false, message: "CPF disponível" };
     }
-    
-    // Caso contrário, o CPF já está em uso
+
     return { exists: true, message: "CPF já cadastrado por outro usuário" };
   },
 });

@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { action, mutation, query } from "./_generated/server";
+import { Id } from "./_generated/dataModel";
 
 export const generateUploadUrl = mutation(async (ctx) => {
   return await ctx.storage.generateUploadUrl();
@@ -30,6 +31,18 @@ export const getUrlOnce = action({
   handler: async (ctx, { storageId }) => {
     const url = await ctx.storage.getUrl(storageId);
     return url;
+  },
+});
+
+// Query que aceita string pura (sem validação v.id) — para vídeos em content: v.any()
+export const getVideoUrl = query({
+  args: { storageId: v.string() },
+  handler: async (ctx, { storageId }) => {
+    try {
+      return await ctx.storage.getUrl(storageId as Id<"_storage">);
+    } catch {
+      return null;
+    }
   },
 });
 

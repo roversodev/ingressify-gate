@@ -118,14 +118,19 @@ export const updateNetAmounts = mutation({
   args: {
     transactionId: v.string(),
     netReceivedAmount: v.number(),
+    amount: v.optional(v.number()),
   },
-  handler: async (ctx, { transactionId, netReceivedAmount }) => {
+  handler: async (ctx, { transactionId, netReceivedAmount, amount }) => {
     const tx = await ctx.db
       .query("transactions")
       .withIndex("by_transactionId", (q) => q.eq("transactionId", transactionId))
       .first();
     if (!tx) throw new Error("Transação não encontrada");
-    await ctx.db.patch(tx._id, { netReceivedAmount });
+    const patch: { netReceivedAmount: number; amount?: number } = { netReceivedAmount };
+    if (typeof amount === "number" && Number.isFinite(amount)) {
+      patch.amount = amount;
+    }
+    await ctx.db.patch(tx._id, patch);
   },
 });
 
@@ -142,6 +147,8 @@ export const upsertAbandonedCart = mutation({
     step: v.string(),
   },
   handler: async (ctx, args) => {
+    if (args.totalAmount <= 0) return;
+
     // Tenta encontrar um carrinho existente para este usuário/email neste evento que esteja "active"
     let existingCart = null;
     

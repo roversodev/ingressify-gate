@@ -2,6 +2,10 @@ import { query, mutation } from "./_generated/server";
 import { GenericId, v } from "convex/values";
 import { paginationOptsValidator } from "convex/server";
 import { Id } from "./_generated/dataModel";
+import {
+  normalizeCourtesyEmail,
+  PENDING_COURTESY_USER_ID,
+} from "./courtesyHelpers";
 import { feeCalculations } from "../lib/fees";
 const { calculateProducerAmount } = feeCalculations;
 
@@ -73,6 +77,7 @@ export const getById = query({
     return {
       _id: event._id,
       name: event.name,
+      slug: event.slug,
       userId: event.userId,
       organizationId: event.organizationId,
       eventStartDate: event.eventStartDate,
@@ -585,6 +590,9 @@ export const create = mutation({
     placeId: v.optional(v.string()),
     eventStartDate: v.number(),
     eventEndDate: v.number(),
+    salesDeadline: v.optional(v.number()),
+    showScarcityIndicator: v.optional(v.boolean()),
+    showConfirmedBuyersAvatars: v.optional(v.boolean()),
     userId: v.string(),
     organizationId: v.id("organizations"),
     customSections: v.optional(v.array(v.object({
@@ -623,6 +631,9 @@ export const updateEvent = mutation({
     placeId: v.optional(v.string()),
     eventStartDate: v.number(),
     eventEndDate: v.number(),
+    salesDeadline: v.optional(v.number()),
+    showScarcityIndicator: v.optional(v.boolean()),
+    showConfirmedBuyersAvatars: v.optional(v.boolean()),
     customSections: v.optional(v.array(v.object({
       type: v.string(),
       title: v.optional(v.string()),
@@ -849,15 +860,11 @@ export const generateCourtesyTickets = mutation({
     customMessage: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    // Verify user exists - DO NOT create if doesn't exist
-    const user = await ctx.db
+    const normalizedEmail = normalizeCourtesyEmail(args.userEmail);
+    const recipientUser = await ctx.db
       .query("users")
-      .withIndex("by_email", (q) => q.eq("email", args.userEmail))
+      .withIndex("by_email", (q) => q.eq("email", normalizedEmail))
       .first();
-
-    if (!user) {
-      throw new Error(`Usuário com email ${args.userEmail} não está cadastrado no sistema. Apenas usuários cadastrados podem receber ingressos cortesia.`);
-    }
 
     // Buscar o evento
     const event = await ctx.db.get(args.eventId);
@@ -887,6 +894,11 @@ export const generateCourtesyTickets = mutation({
       throw new Error("Você não tem permissão para gerar cortesias para este evento");
     }
 
+    const senderUser = await ctx.db
+      .query("users")
+      .withIndex("by_user_id", (q) => q.eq("userId", args.generatedBy))
+      .first();
+
     // Get or create courtesy ticket type
     let ticketTypeId = args.ticketTypeId;
     if (!ticketTypeId) {
@@ -911,16 +923,25 @@ export const generateCourtesyTickets = mutation({
     // Create individual courtesy tickets (one for each quantity)
     const ticketIds: GenericId<"tickets">[] = [];
 
+    const recipientUserId = recipientUser
+      ? recipientUser.userId
+      : PENDING_COURTESY_USER_ID;
+
     for (let i = 0; i < args.quantity; i++) {
       const ticketId = await ctx.db.insert("tickets", {
         eventId: args.eventId,
         ticketTypeId,
-        userId: user.userId,
+        userId: recipientUserId,
         quantity: 1, // Sempre 1 para cada ticket individual
         unitPrice: 0,
         totalAmount: 0,
         purchasedAt: Date.now(),
         status: "valid",
+        courtesySentByUserId: args.generatedBy,
+        courtesySentByName: senderUser?.name,
+        ...(recipientUser
+          ? {}
+          : { pendingRecipientEmail: normalizedEmail }),
       });
 
       ticketIds.push(ticketId);
@@ -931,7 +952,12 @@ export const generateCourtesyTickets = mutation({
       availableQuantity: ticketType.availableQuantity - args.quantity,
     });
 
-    return { ticketIds }; // Retorna array de IDs ao invés de um único ID
+    return {
+      ticketIds,
+      courtesySentByUserId: args.generatedBy,
+      courtesySentByName: senderUser?.name,
+      recipientHadAccount: !!recipientUser,
+    };
   },
 });
 
@@ -1800,22 +1826,42 @@ export const getEventCourtesyDetails = query({
     // Buscar detalhes dos usuários e tipos de ingresso
     const ticketsWithDetails = await Promise.all(
       courtesyTickets.map(async (ticket) => {
+        const ticketType = await ctx.db.get(ticket.ticketTypeId);
+        const pendingEmail = ticket.pendingRecipientEmail;
+
+        if (pendingEmail) {
+          return {
+            ticketId: ticket._id,
+            userId: ticket.userId,
+            recipientName: "Aguardando cadastro",
+            recipientEmail: pendingEmail,
+            pendingClaim: true,
+            ticketTypeName: ticketType?.name || "Tipo não disponível",
+            status: ticket.status,
+            sentAt: ticket.purchasedAt,
+            quantity: ticket.quantity,
+            sentByUserId: ticket.courtesySentByUserId,
+            sentByName: ticket.courtesySentByName,
+          };
+        }
+
         const user = await ctx.db
           .query("users")
           .withIndex("by_user_id", (q) => q.eq("userId", ticket.userId))
           .first();
-        
-        const ticketType = await ctx.db.get(ticket.ticketTypeId);
-        
+
         return {
           ticketId: ticket._id,
           userId: ticket.userId,
           recipientName: user?.name || "Nome não disponível",
           recipientEmail: user?.email || "Email não disponível",
+          pendingClaim: false,
           ticketTypeName: ticketType?.name || "Tipo não disponível",
           status: ticket.status,
           sentAt: ticket.purchasedAt,
           quantity: ticket.quantity,
+          sentByUserId: ticket.courtesySentByUserId,
+          sentByName: ticket.courtesySentByName,
         };
       })
     );
@@ -1828,6 +1874,7 @@ export const getEventCourtesyDetails = query({
         acc[key] = {
           recipientName: ticket.recipientName,
           recipientEmail: ticket.recipientEmail,
+          pendingClaim: ticket.pendingClaim,
           tickets: [],
           totalQuantity: 0,
           latestSentAt: ticket.sentAt,
@@ -1843,6 +1890,9 @@ export const getEventCourtesyDetails = query({
         status: ticket.status,
         sentAt: ticket.sentAt,
         quantity: ticket.quantity,
+        sentByUserId: ticket.sentByUserId,
+        sentByName: ticket.sentByName,
+        pendingClaim: ticket.pendingClaim,
       });
       
       acc[key].totalQuantity += ticket.quantity;
@@ -1982,6 +2032,10 @@ export const getEventEditData = query({
       latitude: event.latitude,
       longitude: event.longitude,
       placeId: event.placeId,
+      salesDeadline: event.salesDeadline,
+      // Sempre boolean explícito: só `false` no DB desliga; ausente/undefined = ativo (comportamento legado)
+      showScarcityIndicator: event.showScarcityIndicator !== false,
+      showConfirmedBuyersAvatars: event.showConfirmedBuyersAvatars !== false,
     };
   },
 });

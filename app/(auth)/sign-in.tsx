@@ -1,7 +1,8 @@
 import { HapticTab } from '@/components/HapticTab';
-import { IconSymbol } from '@/components/ui/IconSymbol';
 import { useOAuth, useSignIn } from '@clerk/clerk-expo';
 import { makeRedirectUri } from 'expo-auth-session';
+import { LinearGradient } from 'expo-linear-gradient';
+import { router } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import React, { useEffect, useState } from 'react';
 import {
@@ -17,233 +18,216 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import Svg, { Path } from 'react-native-svg';
 
 export const useWarmUpBrowser = () => {
   useEffect(() => {
-    if (Platform.OS === 'web') return
-    void WebBrowser.warmUpAsync()
+    if (Platform.OS === 'web') return;
+    void WebBrowser.warmUpAsync();
     return () => {
-      void WebBrowser.coolDownAsync()
-    }
-  }, [])
-}
-// Configuração necessária para o WebBrowser
+      void WebBrowser.coolDownAsync();
+    };
+  }, []);
+};
+
 WebBrowser.maybeCompleteAuthSession();
 
+function GoogleLogo({ size = 20 }: { size?: number }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 48 48">
+      <Path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z" />
+      <Path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z" />
+      <Path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z" />
+      <Path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.18 1.48-4.97 2.31-8.16 2.31-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z" />
+    </Svg>
+  );
+}
+
+function AppleLogo({ size = 20, color = '#000000' }: { size?: number; color?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 814 1000">
+      <Path fill={color} d="M788.1 340.9c-5.8 4.5-108.2 62.2-108.2 190.5 0 148.4 130.3 200.9 134.2 202.2-.6 3.2-20.7 71.9-68.7 141.9-42.8 61.6-87.5 123.1-155.5 123.1s-85.5-39.5-164-39.5c-76.5 0-103.7 40.8-165.9 40.8s-105-57.8-155.5-127.4C46 790.7 0 663 0 541.8c0-207.5 135.4-317.2 268.8-317.2 70.8 0 129.9 46.5 173.9 46.5 42.8 0 109.8-49.1 186.7-49.1 30.1 0 108.2 2.6 168.9 62.9zm-174.6-107.4c7.7-40.2 1.3-75.8-14.4-106.4-41.5 17.4-90.2 57.8-115.7 95.8-23.8 34.3-42.4 78-37.7 120.7 45.3 3.2 91-23.8 114.8-60.4 11.8-18.4 23.1-43.6 52.9-49.7z" />
+    </Svg>
+  );
+}
+
+function EmailIcon({ size = 18, color = '#6B7280' }: { size?: number; color?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"
+        d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+    </Svg>
+  );
+}
+
+function LockIcon({ size = 18, color = '#6B7280' }: { size?: number; color?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"
+        d="M12 14a1 1 0 100 2 1 1 0 000-2zM5 11V7a7 7 0 0114 0v4M3 11h18v10H3V11z" />
+    </Svg>
+  );
+}
+
+function EyeIcon({ open, size = 18, color = '#6B7280' }: { open: boolean; size?: number; color?: string }) {
+  return open ? (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" d="M1 12S5 4 12 4s11 8 11 8-4 8-11 8S1 12 1 12z" />
+      <Path stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" d="M12 15a3 3 0 100-6 3 3 0 000 6z" />
+    </Svg>
+  ) : (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"
+        d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19M1 1l22 22" />
+    </Svg>
+  );
+}
+
 export default function SignInScreen() {
-  useWarmUpBrowser()
+  useWarmUpBrowser();
   const { startOAuthFlow } = useOAuth({ strategy: 'oauth_google' });
   const { signIn, setActive } = useSignIn();
-  // REMOVER: const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-  // Apple: estado/strategy/availability
+  const [emailFocused, setEmailFocused] = useState(false);
+  const [passwordFocused, setPasswordFocused] = useState(false);
+
   const { startOAuthFlow: startAppleOAuth } = useOAuth({ strategy: 'oauth_apple' });
   const [isAppleLoading, setIsAppleLoading] = useState(false);
   const [isAppleAvailable, setIsAppleAvailable] = useState(false);
 
   useEffect(() => {
     if (Platform.OS === 'ios') {
-      // Verifica suporte ao botão nativo no dispositivo
-      // Ignorado em outras plataformas
       import('expo-apple-authentication').then(mod => {
         mod.isAvailableAsync().then(setIsAppleAvailable).catch(() => setIsAppleAvailable(false));
       });
     }
   }, []);
+
   const onPressGoogleSignIn = React.useCallback(async () => {
     try {
       setIsGoogleLoading(true);
-      // Para debug: vamos capturar a URL que está sendo usada
-      const redirectUrl = makeRedirectUri({
-        scheme: 'ingressify-gate',
-        path: 'oauth-callback',
-      });
-      
-      console.log('🔍 DEBUG - URL de redirecionamento:', redirectUrl);
-      
-      const { createdSessionId, signIn, signUp, setActive } = await startOAuthFlow({
-        redirectUrl: redirectUrl,
-      });
-  
+      const redirectUrl = makeRedirectUri({ scheme: 'ingressify-gate', path: 'oauth-callback' });
+      const { createdSessionId, signIn, signUp, setActive } = await startOAuthFlow({ redirectUrl });
+
       if (createdSessionId) {
         await setActive!({ session: createdSessionId });
-        // Não navegar manualmente; layout raiz redireciona
+      } else if (signIn?.status === 'complete') {
+        await setActive!({ session: signIn.createdSessionId });
+      } else if (signUp?.status === 'complete') {
+        await setActive!({ session: signUp.createdSessionId });
+      } else if (signIn?.status === 'needs_identifier' || signUp?.status === 'missing_requirements') {
+        Alert.alert('Informações Adicionais', 'Algumas informações adicionais são necessárias. Por favor, faça seu cadastro pelo nosso site.');
       } else {
-        // Verifica se é um login existente
-        if (signIn?.status === 'complete') {
-          await setActive!({ session: signIn.createdSessionId });
-          // Não navegar manualmente
-        } 
-        // Verifica se é um novo registro
-        else if (signUp?.status === 'complete') {
-          await setActive!({ session: signUp.createdSessionId });
-          // Não navegar manualmente
-        }
-        // Verifica se precisa de informações adicionais
-        else if (signIn?.status === 'needs_identifier' || signUp?.status === 'missing_requirements') {
-          Alert.alert('Informações Adicionais', 'Algumas informações adicionais são necessárias para completar seu cadastro por favor faça seu cadastro pelo nosso site!');
-        }
-        // Outros casos que realmente precisam de atenção
-        else {
-          console.log('Status do signIn:', signIn?.status);
-          console.log('Status do signUp:', signUp?.status);
-          Alert.alert('Atenção', 'Verificação adicional necessária. Tente novamente.');
-        }
+        Alert.alert('Atenção', 'Verificação adicional necessária. Tente novamente.');
       }
     } catch (err: any) {
-      console.error('OAuth error', err);
-      
-      // Captura a URL que estava sendo usada no erro
-      const currentRedirectUrl = makeRedirectUri({
-        scheme: 'ingressify-gate',
-        path: '/oauth-callback',
-      });
-      
-      let errorMessage = `Falha ao fazer login com Google\n\n🔍 URL solicitada: ${currentRedirectUrl}`;
-      
-      if (err.errors && err.errors.length > 0) {
-        errorMessage = `${err.errors[0].message}\n\n🔍 URL solicitada: ${currentRedirectUrl}`;
-      } else if (err.message) {
-        errorMessage = `${err.message}\n\n🔍 URL solicitada: ${currentRedirectUrl}`;
-      }
-      
-      // Exibe o erro com a URL para debug
-      Alert.alert('Erro OAuth', errorMessage);
-      
-      // Log detalhado no console
-      console.log('🚨 ERRO OAUTH DETALHADO:');
-      console.log('URL solicitada:', currentRedirectUrl);
-      console.log('Erro completo:', JSON.stringify(err, null, 2));
+      const redirectUrl = makeRedirectUri({ scheme: 'ingressify-gate', path: '/oauth-callback' });
+      let msg = `Falha ao fazer login com Google\n\n🔍 URL: ${redirectUrl}`;
+      if (err.errors?.[0]?.message) msg = `${err.errors[0].message}\n\n🔍 URL: ${redirectUrl}`;
+      else if (err.message) msg = `${err.message}\n\n🔍 URL: ${redirectUrl}`;
+      Alert.alert('Erro OAuth', msg);
     } finally {
       setIsGoogleLoading(false);
     }
-  }, [startOAuthFlow, setActive /*, router removido */]);
+  }, [startOAuthFlow, setActive]);
 
-  // Apple Sign In (Clerk)
   const onPressAppleSignIn = React.useCallback(async () => {
     try {
       setIsAppleLoading(true);
-      const redirectUrl = makeRedirectUri({
-        scheme: 'ingressify-gate',
-        path: 'oauth-callback',
-      });
-
-      const { createdSessionId, signIn, signUp, setActive } = await startAppleOAuth({
-        redirectUrl,
-      });
+      const redirectUrl = makeRedirectUri({ scheme: 'ingressify-gate', path: 'oauth-callback' });
+      const { createdSessionId, signIn, signUp, setActive } = await startAppleOAuth({ redirectUrl });
 
       if (createdSessionId) {
         await setActive!({ session: createdSessionId });
-        // Não navegar manualmente
+      } else if (signIn?.status === 'complete') {
+        await setActive!({ session: signIn.createdSessionId });
+      } else if (signUp?.status === 'complete') {
+        await setActive!({ session: signUp.createdSessionId });
+      } else if (signIn?.status === 'needs_identifier' || signUp?.status === 'missing_requirements') {
+        Alert.alert('Informações Adicionais', 'Algumas informações adicionais são necessárias. Por favor, faça seu cadastro pelo nosso site.');
       } else {
-        // Verifica se é um login existente
-        if (signIn?.status === 'complete') {
-          await setActive!({ session: signIn.createdSessionId });
-          // Não navegar manualmente
-        }
-        // Verifica se é um novo registro
-        else if (signUp?.status === 'complete') {
-          await setActive!({ session: signUp.createdSessionId });
-          // Não navegar manualmente
-        }
-        // Verifica se precisa de informações adicionais
-        else if (signIn?.status === 'needs_identifier' || signUp?.status === 'missing_requirements') {
-          Alert.alert('Informações Adicionais', 'Algumas informações adicionais são necessárias para completar seu cadastro por favor faça seu cadastro pelo nosso site!');
-        }
-        // Outros casos
-        else {
-          console.log('Status do signIn:', signIn?.status);
-          console.log('Status do signUp:', signUp?.status);
-          Alert.alert('Atenção', 'Verificação adicional necessária. Tente novamente.');
-        }
+        Alert.alert('Atenção', 'Verificação adicional necessária. Tente novamente.');
       }
     } catch (err: any) {
-      let errorMessage = 'Falha ao entrar com Apple.';
-      if (err?.errors?.[0]?.message) errorMessage = err.errors[0].message;
-
-      const currentRedirectUrl = makeRedirectUri({ scheme: 'ingressify-gate', path: '/oauth-callback' });
-      Alert.alert('Erro OAuth', `${errorMessage}\n\n🔍 URL: ${currentRedirectUrl}`);
-      console.log('🚨 ERRO OAUTH APPLE:', JSON.stringify(err, null, 2));
+      let msg = 'Falha ao entrar com Apple.';
+      if (err?.errors?.[0]?.message) msg = err.errors[0].message;
+      const redirectUrl = makeRedirectUri({ scheme: 'ingressify-gate', path: '/oauth-callback' });
+      Alert.alert('Erro OAuth', `${msg}\n\n🔍 URL: ${redirectUrl}`);
     } finally {
       setIsAppleLoading(false);
     }
   }, [startAppleOAuth]);
+
   const onPressEmailSignIn = async () => {
     if (!email || !password) {
       Alert.alert('Erro', 'Por favor, preencha todos os campos');
       return;
     }
-
     try {
       setIsLoading(true);
-      const result = await signIn!.create({
-        identifier: email,
-        password,
-      });
-
+      const result = await signIn!.create({ identifier: email, password });
       if (result.status === 'complete') {
         await setActive!({ session: result.createdSessionId });
-        // Não navegar manualmente
       } else {
         Alert.alert('Erro', 'Falha ao fazer login. Verifique suas credenciais.');
       }
     } catch (err: any) {
-      console.error('Email sign in error', err);
       Alert.alert('Erro', err.errors?.[0]?.message || 'Falha ao fazer login');
     } finally {
       setIsLoading(false);
     }
   };
 
-  const navigateToSignUp = () => {
-    WebBrowser.openBrowserAsync('https://ingressify.com.br');
-  };
-
   return (
-    <SafeAreaView className="flex-1 bg-background">
-      <KeyboardAvoidingView 
-        className="flex-1" 
+    <SafeAreaView style={{ flex: 1, backgroundColor: '#232323' }}>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
       >
-        <ScrollView 
-          className="flex-1"
+        <ScrollView
+          style={{ flex: 1 }}
           contentContainerStyle={{ flexGrow: 1 }}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
-          <View className="flex-1 justify-center px-6 py-6">
+          <View style={{ flex: 1, paddingHorizontal: 24, paddingVertical: 24 }}>
+
             {/* Header com Logo */}
-            <View className="items-center mb-8">
-              <View className="w-60 h-60">
-                <Image 
-                  source={require('../../assets/images/logo.png')} 
-                  className="w-full h-full"
+            <View style={{ alignItems: 'center', marginBottom: 32 }}>
+              <View style={{ width: 130, height: 130, borderRadius: 24, overflow: 'hidden' }}>
+                <Image
+                  source={require('../../assets/images/logo.png')}
+                  style={{ width: '100%', height: '100%' }}
                   resizeMode="contain"
                 />
               </View>
-              <Text className="text-2xl font-bold text-white mb-2">Bem-vindo!</Text>
-              <Text className="text-textSecondary text-center text-sm leading-5 max-w-sm">
-                Faça login para acessar o app de validação de ingressos
+              <Text style={{ color: '#FFFFFF', fontSize: 26, fontWeight: '700', marginTop: 20, marginBottom: 6, letterSpacing: -0.5 }}>
+                Bem-vindo de volta!
+              </Text>
+              <Text style={{ color: '#A3A3A3', fontSize: 14, textAlign: 'center', lineHeight: 20, maxWidth: 260 }}>
+                Acesse sua conta para validar ingressos
               </Text>
             </View>
 
-            {/* Formulário de Login */}
-            <View className="mb-6">
-              {/* Campo de Email */}
-              <View className="mb-4">
-                <View className="bg-backgroundCard rounded-xl px-4 py-4 flex-row items-center">
-                  <IconSymbol name="envelope" size={20} color="#6B7280" />
+            {/* Formulário */}
+            <View style={{ marginBottom: 8 }}>
+              {/* Email */}
+              <View style={{ marginBottom: 12 }}>
+                <View style={{ backgroundColor: '#181818', borderRadius: 14, paddingHorizontal: 16, paddingVertical: 14, flexDirection: 'row', alignItems: 'center', borderWidth: 1.5, borderColor: emailFocused ? '#E65CFF' : 'transparent' }}>
+                  <EmailIcon size={18} color={emailFocused ? '#E65CFF' : '#6B7280'} />
                   <TextInput
-                    className="flex-1 text-white text-base ml-3"
-                    placeholder="Email"
-                    placeholderTextColor="#6B7280"
+                    style={{ flex: 1, color: '#FFFFFF', fontSize: 15, marginLeft: 12 }}
+                    placeholder="Seu email"
+                    placeholderTextColor="#4B5563"
                     value={email}
                     onChangeText={setEmail}
+                    onFocus={() => setEmailFocused(true)}
+                    onBlur={() => setEmailFocused(false)}
                     keyboardType="email-address"
                     autoCapitalize="none"
                     autoComplete="email"
@@ -252,103 +236,90 @@ export default function SignInScreen() {
                 </View>
               </View>
 
-              {/* Campo de Senha */}
-              <View className="mb-6">
-                <View className="bg-backgroundCard rounded-xl px-4 py-4 flex-row items-center">
-                  <IconSymbol name="lock" size={20} color="#6B7280" />
+              {/* Senha */}
+              <View style={{ marginBottom: 8 }}>
+                <View style={{ backgroundColor: '#181818', borderRadius: 14, paddingHorizontal: 16, paddingVertical: 14, flexDirection: 'row', alignItems: 'center', borderWidth: 1.5, borderColor: passwordFocused ? '#E65CFF' : 'transparent' }}>
+                  <LockIcon size={18} color={passwordFocused ? '#E65CFF' : '#6B7280'} />
                   <TextInput
-                    className="flex-1 text-white text-base ml-3 mr-3"
-                    placeholder="Senha"
-                    placeholderTextColor="#6B7280"
+                    style={{ flex: 1, color: '#FFFFFF', fontSize: 15, marginLeft: 12, marginRight: 8 }}
+                    placeholder="Sua senha"
+                    placeholderTextColor="#4B5563"
                     value={password}
                     onChangeText={setPassword}
+                    onFocus={() => setPasswordFocused(true)}
+                    onBlur={() => setPasswordFocused(false)}
                     secureTextEntry={!showPassword}
                     autoComplete="password"
                     returnKeyType="done"
                     onSubmitEditing={onPressEmailSignIn}
                   />
-                  <HapticTab 
-                    onPress={() => setShowPassword(!showPassword)}
-                    className="p-1"
-                    pressOpacity={1}
-                  >
-                    <IconSymbol 
-                      name={showPassword ? "eye.slash" : "eye"} 
-                      size={20} 
-                      color="#6B7280" 
-                    />
-                  </HapticTab>
+                  <TouchableOpacity onPress={() => setShowPassword(!showPassword)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                    <EyeIcon open={showPassword} size={18} color="#6B7280" />
+                  </TouchableOpacity>
                 </View>
               </View>
 
-              {/* Botão de Login com Email */}
-              <HapticTab 
-                className={`bg-primary py-4 rounded-xl shadow-lg active:bg-primary/90 ${
-                  isLoading ? 'opacity-50' : ''
-                }`}
-                onPress={onPressEmailSignIn}
-                disabled={isLoading}
-                pressOpacity={1}
-              >
-                <View className="flex-row items-center justify-center">
-                  {isLoading && (
-                    <ActivityIndicator size="small" color="#FFF" className="mr-2" />
-                  )}
-                  <Text className="text-white text-center font-bold text-base">
-                    {isLoading ? 'Entrando...' : 'Entrar com Email'}
+              {/* Esqueceu a senha */}
+              <View style={{ alignItems: 'flex-end', marginBottom: 20 }}>
+                <TouchableOpacity onPress={() => router.push('/(auth)/forgot-password')} hitSlop={{ top: 8, bottom: 8, left: 12, right: 4 }}>
+                  <Text style={{ color: '#E65CFF', fontSize: 13, fontWeight: '500' }}>Esqueceu a senha?</Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* Botão Entrar */}
+              <HapticTab onPress={onPressEmailSignIn} disabled={isLoading} style={{ opacity: isLoading ? 0.7 : 1 }}>
+                <LinearGradient
+                  colors={['#E65CFF', '#C040E0']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={{ borderRadius: 14, paddingVertical: 15, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', shadowColor: '#E65CFF', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.4, shadowRadius: 12, elevation: 6 }}
+                >
+                  {isLoading && <ActivityIndicator size="small" color="#FFF" style={{ marginRight: 8 }} />}
+                  <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 15, letterSpacing: 0.2 }}>
+                    {isLoading ? 'Entrando...' : 'Entrar'}
                   </Text>
-                </View>
+                </LinearGradient>
               </HapticTab>
             </View>
 
             {/* Divisor */}
-            <View className="flex-row items-center mb-6">
-              <View className="flex-1 h-px bg-gray-600" />
-              <Text className="text-textSecondary px-4 text-sm">ou</Text>
-              <View className="flex-1 h-px bg-gray-600" />
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginVertical: 20 }}>
+              <View style={{ flex: 1, height: 1, backgroundColor: '#2E2E2E' }} />
+              <Text style={{ color: '#4B5563', paddingHorizontal: 14, fontSize: 12, fontWeight: '500', letterSpacing: 0.5 }}>
+                OU CONTINUE COM
+              </Text>
+              <View style={{ flex: 1, height: 1, backgroundColor: '#2E2E2E' }} />
             </View>
 
-            {/* Botão Sign in with Apple (iOS) */}
-            {Platform.OS === 'ios' && isAppleAvailable && (
-              <View className="mb-4">
-                {/* Botão nativo da Apple (mantém as guidelines visuais) */}
-                <View style={{ opacity: isAppleLoading ? 0.6 : 1 }}>
-                  {/* @ts-ignore: módulo dinâmico já carregado no useEffect */}
-                  {React.createElement(
-                    // cria o botão dinamicamente para evitar import estático em outras plataformas
-                    require('expo-apple-authentication').AppleAuthenticationButton,
-                    {
-                      buttonType: require('expo-apple-authentication').AppleAuthenticationButtonType.SIGN_IN,
-                      buttonStyle: require('expo-apple-authentication').AppleAuthenticationButtonStyle.BLACK,
-                      cornerRadius: 10,
-                      style: { width: '100%', height: 44 },
-                      onPress: onPressAppleSignIn,
-                      disabled: isAppleLoading,
-                    }
-                  )}
-                </View>
-              </View>
-            )}
+            {/* Botões Sociais */}
+            <View style={{ gap: 10 }}>
+              {Platform.OS === 'ios' && isAppleAvailable && (
+                <HapticTab onPress={onPressAppleSignIn} disabled={isAppleLoading} style={{ opacity: isAppleLoading ? 0.7 : 1 }}>
+                  <View style={{ backgroundColor: '#FFFFFF', borderRadius: 14, paddingVertical: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
+                    {isAppleLoading ? (
+                      <ActivityIndicator size="small" color="#000000" style={{ marginRight: 10 }} />
+                    ) : (
+                      <View style={{ marginRight: 10 }}>
+                        <AppleLogo size={20} color="#000000" />
+                      </View>
+                    )}
+                    <Text style={{ color: '#000000', fontWeight: '600', fontSize: 15 }}>
+                      {isAppleLoading ? 'Conectando...' : 'Continuar com Apple'}
+                    </Text>
+                  </View>
+                </HapticTab>
+              )}
 
-            {/* Botão do Google */}
-            <View className="mb-6">
-              <HapticTab 
-                className={`bg-backgroundCard border border-gray-600 py-4 rounded-xl shadow-sm active:bg-gray-700 ${
-                  isGoogleLoading ? 'opacity-50' : ''
-                }`}
-                onPress={onPressGoogleSignIn}
-                disabled={isGoogleLoading}
-                pressOpacity={1}
-              >
-                <View className="flex-row items-center justify-center">
+              <HapticTab onPress={onPressGoogleSignIn} disabled={isGoogleLoading} style={{ opacity: isGoogleLoading ? 0.7 : 1 }}>
+                <View style={{ backgroundColor: '#FFFFFF', borderRadius: 14, paddingVertical: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
                   {isGoogleLoading ? (
-                    <ActivityIndicator size="small" color="#FFF" className="mr-3" />
+                    <ActivityIndicator size="small" color="#4285F4" style={{ marginRight: 10 }} />
                   ) : (
-                    <View className="w-5 h-5 mr-3">
-                      <IconSymbol name="globe" size={20} color="#FFF" />
+                    <View style={{ marginRight: 10 }}>
+                      <GoogleLogo size={20} />
                     </View>
                   )}
-                  <Text className="text-white font-semibold text-base">
+                  <Text style={{ color: '#111111', fontWeight: '600', fontSize: 15 }}>
                     {isGoogleLoading ? 'Conectando...' : 'Continuar com Google'}
                   </Text>
                 </View>
@@ -356,21 +327,23 @@ export default function SignInScreen() {
             </View>
 
             {/* Link de Cadastro */}
-            <View className="flex-row justify-center items-center mb-6">
-              <Text className="text-textSecondary text-sm">Não tem uma conta? </Text>
-              <TouchableOpacity onPress={navigateToSignUp} className="ml-1" activeOpacity={1}>
-                <Text className="text-primary font-semibold text-sm">Cadastre-se</Text>
+            <View style={{ flexDirection: 'row', justifyContent: 'center', alignItems: 'center', marginTop: 28 }}>
+              <Text style={{ color: '#A3A3A3', fontSize: 14 }}>Não tem uma conta? </Text>
+              <TouchableOpacity onPress={() => router.push('/(auth)/sign-up')} hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}>
+                <Text style={{ color: '#E65CFF', fontWeight: '700', fontSize: 14 }}>Cadastre-se</Text>
               </TouchableOpacity>
             </View>
 
             {/* Footer */}
-            <View className="items-center">
-              <Text className="text-textSecondary text-xs text-center leading-4 max-w-xs">
+            <View style={{ alignItems: 'center', marginTop: 20 }}>
+              <Text style={{ color: '#4B5563', fontSize: 11, textAlign: 'center', lineHeight: 16, maxWidth: 280 }}>
                 Ao continuar, você concorda com nossos{' '}
-                <Text className="text-primary">termos de uso</Text> e{' '}
-                <Text className="text-primary">política de privacidade</Text>
+                <Text style={{ color: '#E65CFF' }}>termos de uso</Text>
+                {' '}e{' '}
+                <Text style={{ color: '#E65CFF' }}>política de privacidade</Text>
               </Text>
             </View>
+
           </View>
         </ScrollView>
       </KeyboardAvoidingView>

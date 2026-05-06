@@ -180,11 +180,12 @@ function InitialLayout() {
   // NOVO: permitir (tabs), 'scanner', 'settings', 'dashboard' e 'finance' quando autenticado
   const isInSignedInArea = segments.some(segment => 
     segment === '(tabs)' || 
-    segment === 'scanner' || 
+    segment === 'scanner' ||
     segment === 'settings' ||
     segment === 'dashboard' ||
     segment === 'finance' ||
-    segment === 'courtesy'
+    segment === 'courtesy' ||
+    segment === 'promoter'
   );
 
   // Redirecionos declarativos (sem usar router.*)
@@ -233,6 +234,14 @@ function InitialLayout() {
         <Stack.Screen
           name="change-password"
           options={{ headerShown: false, animation: 'slide_from_right', gestureEnabled: true }}
+        />
+        <Stack.Screen
+          name="promoter"
+          options={{
+            headerShown: false,
+            animation: 'slide_from_right',
+            gestureEnabled: true,
+          }}
         />
         <Stack.Screen name="+not-found" />
       </Stack>

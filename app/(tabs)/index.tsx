@@ -446,7 +446,7 @@ export default function EventsScreen() {
           }
 
           const route = item.role === 'promoter'
-            ? `/scanner/offline/${item._id}` as any
+            ? `/promoter/${item._id}` as any
             : `/scanner/dashboard/${item._id}` as any;
           return (
             <EventItem

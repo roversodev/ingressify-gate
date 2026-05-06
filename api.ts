@@ -943,6 +943,12 @@ export type PublicApiType = {
       { promoterId: Id<"promoters"> },
       any
     >;
+    getPromoterOnlineDashboard: FunctionReference<
+      "query",
+      "public",
+      { eventId: Id<"events">; promoterCode: string },
+      any
+    >;
     recordOrganizerOfflineSale: FunctionReference<
       "mutation",
       "public",

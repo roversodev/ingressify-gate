@@ -19,6 +19,7 @@ export default function ScannerLayout() {
       <Stack.Screen name="validators" />
       <Stack.Screen name="lists" />
       <Stack.Screen name="list-validation" />
+      <Stack.Screen name="offline/[eventId]" />
     </Stack>
   );
 }

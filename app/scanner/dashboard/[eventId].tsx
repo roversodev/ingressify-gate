@@ -42,7 +42,14 @@ export default function EventDashboardScreen() {
     userId: user?.id || "",
   });
 
-  if (!event || permission === undefined) {
+  const promoter = useQuery(
+    api.promoters.getPromoterByUserAndEvent,
+    user?.id ? { userId: user.id, eventId: eventId as Id<"events"> } : "skip"
+  );
+
+  const isPromoterLoaded = promoter !== undefined;
+
+  if (!event || permission === undefined || !isPromoterLoaded) {
     return (
       <SafeAreaView className="flex-1 justify-center items-center bg-background">
         <ActivityIndicator size="large" color="#E65CFF" />
@@ -53,6 +60,7 @@ export default function EventDashboardScreen() {
 
   const isAdmin = permission.isOwner || permission.role === 'admin' || permission.role === 'owner';
   const isStaff = permission.isOwner || permission.isMember || permission.role === 'staff' || isAdmin;
+  const isPromoter = !!promoter && promoter.isActive !== false;
 
   const menuItems = [
     {
@@ -117,6 +125,15 @@ export default function EventDashboardScreen() {
       color: '#f43f5e',
       route: `/scanner/abandoned-carts/${eventId}`,
       visible: isAdmin,
+    },
+    {
+      id: 'offline',
+      title: 'Vendas Offline',
+      subtitle: 'Registrar venda presencial',
+      icon: 'bag',
+      color: '#f59e0b',
+      route: `/scanner/offline/${eventId}`,
+      visible: isPromoter || isAdmin,
     },
   ];
 

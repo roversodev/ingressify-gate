@@ -138,7 +138,7 @@ export default function ProfileScreen() {
           icon: icons.info,
           color: '#a78bfa',
           onPress: () =>
-            Alert.alert('Ingressify', 'Ingressify App Leitor v2.2.1\n\nSistema de validação de ingressos.\n\n© 2026 Ingressify. Todos os direitos reservados.'),
+            Alert.alert('Ingressify', 'Ingressify App Leitor v2.3\n\nSistema de validação de ingressos.\n\n© 2026 Ingressify. Todos os direitos reservados.'),
         },
       ],
     },
@@ -304,7 +304,7 @@ export default function ProfileScreen() {
 
         {/* Versão */}
         <View style={{ alignItems: 'center', marginTop: 24 }}>
-          <Text style={{ color: '#374151', fontSize: 12 }}>Ingressify Leitor v2.2.1</Text>
+          <Text style={{ color: '#374151', fontSize: 12 }}>Ingressify Leitor v2.3</Text>
         </View>
 
       </ScrollView>

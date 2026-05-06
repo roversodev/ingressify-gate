@@ -90,19 +90,36 @@ function EventItem({ event, onPress }: { event: any, onPress: () => void }) {
       {/* Header do evento */}
       <View className="flex-row justify-between items-start mb-4">
         <View className="flex-1 mr-4">
-          <Text className="text-white text-lg font-semibold mb-1" numberOfLines={2} style={{ fontSize: titleFont }}>
-            {event.name}
-          </Text>
+          <View className="flex-row items-center gap-2 mb-1 flex-wrap">
+            <Text className="text-white text-lg font-semibold" numberOfLines={2} style={{ fontSize: titleFont }}>
+              {event.name}
+            </Text>
+            {event.role === 'promoter' && (
+              <View className="bg-yellow-500/20 px-2 py-0.5 rounded-full">
+                <Text className="text-yellow-400 text-[10px] font-bold uppercase">Promoter</Text>
+              </View>
+            )}
+            {(event.role === 'admin' || event.role === 'staff') && (
+              <View className="bg-blue-500/20 px-2 py-0.5 rounded-full">
+                <Text className="text-blue-400 text-[10px] font-bold uppercase">{event.role}</Text>
+              </View>
+            )}
+            {event.role === 'validator' && (
+              <View className="bg-green-500/20 px-2 py-0.5 rounded-full">
+                <Text className="text-green-400 text-[10px] font-bold uppercase">Validador</Text>
+              </View>
+            )}
+          </View>
           <Text className="text-gray-400 text-sm" style={{ fontSize: locationFont }}>
             {event.location?.split('-')[0]?.trim() || 'Local não disponível'}
           </Text>
         </View>
         <View className="bg-primary/10 px-3 py-1 rounded-full">
           <Text className="text-primary text-xs font-medium" style={{ fontSize: dateFont }}>
-            {new Date(event.date).toLocaleDateString('pt-BR', { 
-              day: '2-digit', 
-              month: 'short' 
-            })}
+            {event.date ? new Date(event.date).toLocaleDateString('pt-BR', {
+              day: '2-digit',
+              month: 'short'
+            }) : '—'}
           </Text>
         </View>
       </View>
@@ -166,10 +183,22 @@ export default function EventsScreen() {
     api.events.getSellerEvents,
     user?.id ? { userId: user.id } : "skip"
   );
-  
+
   // Buscar eventos que o usuário pode validar
   const validatorEvents = useQuery(
     api.validators.getEventsUserCanValidate,
+    user?.id ? { userId: user.id } : "skip"
+  );
+
+  // Buscar eventos onde o usuário é promoter
+  const promoterLinks = useQuery(
+    api.promoters.getUserPromoterLinks,
+    user?.id ? { userId: user.id } : "skip"
+  );
+
+  // Buscar eventos de organizações onde o usuário é membro
+  const orgMemberEvents = useQuery(
+    api.events.getOrgMemberEvents,
     user?.id ? { userId: user.id } : "skip"
   );
   
@@ -198,13 +227,21 @@ export default function EventsScreen() {
     }
   }, [user, hasPendingInvites, showInviteModal, pendingInvites]);
 
-  // Combinar os eventos do vendedor e os eventos que o usuário pode validar
+  // Combinar todos os eventos do usuário (dono, validador, promoter, membro de org)
   const { upcomingEvents, pastEvents } = React.useMemo(() => {
     const allEvents: any[] = [];
-    
-    // Adicionar eventos do vendedor
+    const seenIds = new Set<string>();
+
+    const addEvent = (event: any) => {
+      if (!seenIds.has(event._id)) {
+        seenIds.add(event._id);
+        allEvents.push(event);
+      }
+    };
+
+    // Eventos que o usuário criou (dono)
     if (sellerEvents) {
-      const formatted = sellerEvents.map((event: any) => ({
+      sellerEvents.forEach((event: any) => addEvent({
         _id: event._id,
         name: event.name,
         date: event.eventStartDate || event._creationTime,
@@ -214,14 +251,31 @@ export default function EventsScreen() {
         validatedTickets: event.metrics?.validatedTickets || 0,
         revenue: event.metrics?.revenue || 0,
         imageStorageId: event.imageStorageId,
-        isOwner: true
+        isOwner: true,
+        role: 'owner',
       }));
-      allEvents.push(...formatted);
     }
-    
-    // Adicionar eventos que o usuário pode validar
+
+    // Eventos de organizações onde o usuário é membro
+    if (orgMemberEvents) {
+      orgMemberEvents.forEach((event: any) => addEvent({
+        _id: event._id,
+        name: event.name,
+        date: event.eventStartDate || event._creationTime,
+        endDate: event.eventEndDate,
+        location: event.location,
+        totalTickets: event.totalTickets,
+        validatedTickets: 0,
+        revenue: 0,
+        imageStorageId: event.imageStorageId,
+        isOwner: false,
+        role: event.memberRole || 'staff',
+      }));
+    }
+
+    // Eventos que o usuário pode validar (convite aceito)
     if (validatorEvents) {
-      const formatted = validatorEvents.map((event: any) => ({
+      validatorEvents.forEach((event: any) => addEvent({
         _id: event._id,
         name: event.name,
         date: event.eventStartDate || event._creationTime,
@@ -231,15 +285,27 @@ export default function EventsScreen() {
         validatedTickets: event.metrics?.validatedTickets || 0,
         revenue: event.metrics?.revenue || 0,
         imageStorageId: event.imageStorageId,
-        isOwner: false
+        isOwner: false,
+        role: 'validator',
       }));
-      
-      // Filtrar eventos duplicados (que o usuário é dono e validador)
-      const uniqueEvents = formatted.filter((validatorEvent: { _id: any; }) => 
-        !allEvents.some(sellerEvent => sellerEvent._id === validatorEvent._id)
-      );
-      
-      allEvents.push(...uniqueEvents);
+    }
+
+    // Eventos onde o usuário é promoter
+    if (promoterLinks) {
+      promoterLinks.forEach((p: any) => addEvent({
+        _id: p.eventId,
+        name: p.eventName,
+        date: p.eventDate,
+        endDate: undefined,
+        location: undefined,
+        totalTickets: 0,
+        validatedTickets: 0,
+        revenue: 0,
+        imageStorageId: p.imageStorageId,
+        isOwner: false,
+        role: 'promoter',
+        promoterId: p._id,
+      }));
     }
     
     const now = Date.now();
@@ -265,11 +331,19 @@ export default function EventsScreen() {
       upcomingEvents: sortedUpcoming, 
       pastEvents: sortedPast 
     };
-  }, [sellerEvents, validatorEvents]);
+  }, [sellerEvents, validatorEvents, promoterLinks, orgMemberEvents]);
 
   const currentEvents = activeTab === 'upcoming' ? upcomingEvents : pastEvents;
 
-  if (sellerEvents === undefined && validatorEvents === undefined) {
+  const isLoading = sellerEvents === undefined && validatorEvents === undefined && promoterLinks === undefined && orgMemberEvents === undefined;
+  const isEmpty = !isLoading &&
+    (!sellerEvents || sellerEvents.length === 0) &&
+    (!validatorEvents || validatorEvents.length === 0) &&
+    (!promoterLinks || promoterLinks.length === 0) &&
+    (!orgMemberEvents || orgMemberEvents.length === 0) &&
+    !hasPendingInvites && !invitesLoading;
+
+  if (isLoading) {
     return (
       <SafeAreaView className="flex-1 justify-center items-center bg-background">
         <ActivityIndicator size="large" color="#E65CFF" />
@@ -278,12 +352,7 @@ export default function EventsScreen() {
     );
   }
 
-  if (
-    (!sellerEvents || sellerEvents.length === 0) &&
-    (!validatorEvents || validatorEvents.length === 0) &&
-    !hasPendingInvites &&
-    !invitesLoading
-  ) {
+  if (isEmpty) {
     return (
       <SafeAreaView className="flex-1 justify-center items-center bg-background px-8">
          <Header showLogo={true} />
@@ -376,10 +445,13 @@ export default function EventsScreen() {
             return <MinimalEventCard event={item} />;
           }
 
+          const route = item.role === 'promoter'
+            ? `/scanner/offline/${item._id}` as any
+            : `/scanner/dashboard/${item._id}` as any;
           return (
-            <EventItem 
-              event={item} 
-              onPress={() => router.push(`/scanner/dashboard/${item._id}`)}
+            <EventItem
+              event={item}
+              onPress={() => router.push(route)}
             />
           );
         }}

@@ -943,6 +943,19 @@ export type PublicApiType = {
       { promoterId: Id<"promoters"> },
       any
     >;
+    recordOrganizerOfflineSale: FunctionReference<
+      "mutation",
+      "public",
+      {
+        eventId: Id<"events">;
+        ticketTypeId: Id<"ticketTypes">;
+        quantity: number;
+        recipientEmail: string;
+        userId: string;
+        notes?: string;
+      },
+      any
+    >;
   };
   storage: {
     generateUploadUrl: FunctionReference<"mutation", "public", any, any>;

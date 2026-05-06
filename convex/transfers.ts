@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import { mutation, query, internalMutation } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
 
@@ -142,6 +142,7 @@ export const createTransferRequest = mutation({
       // Criar solicitação de transferência
       const transferRequestId = await ctx.db.insert("transferRequests", {
         ticketId,
+        eventId: ticket.eventId,
         fromUserId,
         toUserId: toUser.userId,
         toUserEmail,
@@ -274,6 +275,7 @@ export const acceptTransfer = mutation({
       // Registrar no histórico
       await ctx.db.insert("transferHistory", {
         ticketId: transferRequest.ticketId,
+        eventId: ticket.eventId,
         fromUserId: transferRequest.fromUserId,
         toUserId: identity.subject,
         transferredAt: Date.now(),
@@ -465,7 +467,8 @@ export const acceptTransferSimple = mutation({
 
       // Criar histórico com referência ao novo ticket
       await ctx.db.insert("transferHistory", {
-        ticketId: newTicketId, // Usar o ID do novo ticket
+        ticketId: newTicketId,
+        eventId: originalTicket.eventId,
         fromUserId: transferRequest.fromUserId,
         toUserId: toUserId,
         transferredAt: Date.now(),
@@ -741,44 +744,38 @@ export const getTransferHistoryForTicket = query({
 export const getEventTransferStats = query({
   args: { eventId: v.id("events") },
   handler: async (ctx, { eventId }) => {
-    // Buscar todos os tickets do evento
     const tickets = await ctx.db
       .query("tickets")
       .withIndex("by_event", (q) => q.eq("eventId", eventId))
       .collect();
-    
-    const ticketIds = tickets.map(t => t._id);
-    
-    // Buscar transferências pendentes
+
+    const ticketIdSet = new Set(tickets.map((t) => String(t._id)));
+
     const pendingTransfers = await ctx.db
       .query("transferRequests")
-      .filter((q) => q.eq(q.field("status"), "pending"))
+      .withIndex("by_status", (q) => q.eq("status", "pending"))
       .collect();
-    
-    const eventPendingTransfers = pendingTransfers.filter(t => 
-      ticketIds.includes(t.ticketId)
+
+    const eventPendingTransfers = pendingTransfers.filter((t) =>
+      ticketIdSet.has(String(t.ticketId)),
     );
-    
-    // Buscar histórico de transferências
-    const transferHistory = await ctx.db
+
+    const eventTransferHistory = await ctx.db
       .query("transferHistory")
+      .withIndex("by_event_transferred_at", (q) => q.eq("eventId", eventId))
       .collect();
-    
-    const eventTransferHistory = transferHistory.filter(t => 
-      ticketIds.includes(t.ticketId)
-    );
-    
-    // Estatísticas por período (últimos 30 dias)
-    const thirtyDaysAgo = Date.now() - (30 * 24 * 60 * 60 * 1000);
-    const recentTransfers = eventTransferHistory.filter(t => 
-      t._creationTime >= thirtyDaysAgo
-    );
-    
+
+    const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
+    const recentTransfers = eventTransferHistory.filter(
+      (t) => t.transferredAt >= thirtyDaysAgo,
+    ).length;
+
     return {
       totalTransfers: eventTransferHistory.length,
       pendingTransfers: eventPendingTransfers.length,
-      recentTransfers: recentTransfers.length,
-      transferRate: tickets.length > 0 ? (eventTransferHistory.length / tickets.length) * 100 : 0
+      recentTransfers,
+      transferRate:
+        tickets.length > 0 ? (eventTransferHistory.length / tickets.length) * 100 : 0,
     };
   }
 });
@@ -787,75 +784,104 @@ export const getEventTransferStats = query({
 export const getEventTransferDetails = query({
   args: { eventId: v.id("events") },
   handler: async (ctx, { eventId }) => {
-    // Buscar todos os tickets do evento
     const tickets = await ctx.db
       .query("tickets")
       .withIndex("by_event", (q) => q.eq("eventId", eventId))
       .collect();
-    
-    const ticketIds = tickets.map(t => t._id);
-    
-    // Buscar transferências pendentes com detalhes
+
+    const ticketIdSet = new Set(tickets.map((t) => String(t._id)));
+    const ticketById = new Map(tickets.map((t) => [String(t._id), t] as const));
+
     const pendingTransfers = await ctx.db
       .query("transferRequests")
-      .filter((q) => q.eq(q.field("status"), "pending"))
+      .withIndex("by_status", (q) => q.eq("status", "pending"))
       .collect();
-    
-    const eventPendingTransfers = await Promise.all(
-      pendingTransfers
-        .filter(t => ticketIds.includes(t.ticketId))
-        .map(async (transfer) => {
-          const ticket = await ctx.db.get(transfer.ticketId);
-          const ticketType = ticket ? await ctx.db.get(ticket.ticketTypeId) : null;
-          const fromUser = await ctx.db
-            .query("users")
-            .withIndex("by_user_id", (q) => q.eq("userId", transfer.fromUserId))
-            .first();
-          
-          return {
-            transferId: transfer._id,
-            fromUserName: fromUser?.name || "Usuário desconhecido",
-            toUserEmail: transfer.toUserEmail,
-            ticketType: ticketType?.name || "Tipo desconhecido",
-            createdAt: transfer._creationTime,
-            expiresAt: transfer.expiresAt
-          };
-        })
+
+    const eventPendingTransfers = pendingTransfers.filter((t) =>
+      ticketIdSet.has(String(t.ticketId)),
     );
-    
-    // Buscar histórico de transferências com detalhes
+
     const transferHistory = await ctx.db
       .query("transferHistory")
+      .withIndex("by_event_transferred_at", (q) => q.eq("eventId", eventId))
       .collect();
-    
-    const eventTransferHistory = await Promise.all(
-      transferHistory
-        .filter(t => ticketIds.includes(t.ticketId))
-        .map(async (transfer) => {
-          const ticket = await ctx.db.get(transfer.ticketId);
-          const ticketType = ticket ? await ctx.db.get(ticket.ticketTypeId) : null;
-          const fromUser = await ctx.db
+
+    const userIds = new Set<string>();
+    for (const r of eventPendingTransfers) userIds.add(r.fromUserId);
+    for (const h of transferHistory) {
+      userIds.add(h.fromUserId);
+      userIds.add(h.toUserId);
+    }
+
+    const USER_BATCH = 80;
+    const userMap = new Map<string, { name?: string } | null>();
+    const unique = [...userIds];
+    for (let i = 0; i < unique.length; i += USER_BATCH) {
+      const slice = unique.slice(i, i + USER_BATCH);
+      const docs = await Promise.all(
+        slice.map((uid) =>
+          ctx.db
             .query("users")
-            .withIndex("by_user_id", (q) => q.eq("userId", transfer.fromUserId))
-            .first();
-          const toUser = await ctx.db
-            .query("users")
-            .withIndex("by_user_id", (q) => q.eq("userId", transfer.toUserId))
-            .first();
-          
-          return {
-            transferId: transfer._id,
-            fromUserName: fromUser?.name || "Usuário desconhecido",
-            toUserName: toUser?.name || "Usuário desconhecido",
-            ticketType: ticketType?.name || "Tipo desconhecido",
-            transferredAt: transfer._creationTime
-          };
-        })
+            .withIndex("by_user_id", (q) => q.eq("userId", uid))
+            .first(),
+        ),
+      );
+      slice.forEach((uid, j) => userMap.set(uid, docs[j]));
+    }
+
+    const typeIds = new Set<string>();
+    for (const r of eventPendingTransfers) {
+      const td = ticketById.get(String(r.ticketId));
+      if (td) typeIds.add(String(td.ticketTypeId));
+    }
+    for (const h of transferHistory) {
+      const td = ticketById.get(String(h.ticketId));
+      if (td) typeIds.add(String(td.ticketTypeId));
+    }
+    const typeDocs = await Promise.all(
+      [...typeIds].map((id) => ctx.db.get(id as Id<"ticketTypes">)),
     );
-    
+    const typeNameById = new Map(typeDocs.filter(Boolean).map((t) => [String(t!._id), t!.name]));
+
+    const eventPendingTransfersDetailed = eventPendingTransfers.map((transfer) => {
+      const td = ticketById.get(String(transfer.ticketId));
+      const tt =
+        td && td.ticketTypeId
+          ? typeNameById.get(String(td.ticketTypeId)) ?? "Tipo desconhecido"
+          : "Tipo desconhecido";
+      const fromUser = userMap.get(transfer.fromUserId);
+      return {
+        transferId: transfer._id,
+        fromUserName: fromUser?.name || "Usuário desconhecido",
+        toUserEmail: transfer.toUserEmail,
+        ticketType: tt,
+        createdAt: transfer._creationTime,
+        expiresAt: transfer.expiresAt,
+      };
+    });
+
+    const eventTransferHistoryDetailed = [...transferHistory]
+      .sort((a, b) => b.transferredAt - a.transferredAt)
+      .map((t) => {
+        const td = ticketById.get(String(t.ticketId));
+        const tt =
+          td && td.ticketTypeId
+            ? typeNameById.get(String(td.ticketTypeId)) ?? "Tipo desconhecido"
+            : "Tipo desconhecido";
+        const fromUser = userMap.get(t.fromUserId);
+        const toUser = userMap.get(t.toUserId);
+        return {
+          transferId: t._id,
+          fromUserName: fromUser?.name || "Usuário desconhecido",
+          toUserName: toUser?.name || "Usuário desconhecido",
+          ticketType: tt,
+          transferredAt: t.transferredAt,
+        };
+      });
+
     return {
-      pendingTransfers: eventPendingTransfers,
-      completedTransfers: eventTransferHistory.sort((a, b) => b.transferredAt - a.transferredAt)
+      pendingTransfers: eventPendingTransfersDetailed,
+      completedTransfers: eventTransferHistoryDetailed,
     };
   }
 });
@@ -878,5 +904,60 @@ export const getAcceptedTransfersForTicket = query({
         toUserEmail: r.toUserEmail,
         acceptedAt: r.acceptedAt ?? null,
       }));
+  },
+});
+
+/** Migração: preencher `eventId` em históricos antigos (agendar próximo chunk até `done`). */
+export const backfillTransferHistoryEventIdsChunk = internalMutation({
+  args: { cursor: v.optional(v.string()) },
+  handler: async (ctx, { cursor }) => {
+    const page = await ctx.db
+      .query("transferHistory")
+      .order("asc")
+      .paginate({ numItems: 150, cursor: cursor ?? null });
+
+    for (const row of page.page) {
+      if (row.eventId) continue;
+      const ticket = await ctx.db.get(row.ticketId);
+      if (ticket)
+        await ctx.db.patch(row._id, { eventId: ticket.eventId });
+    }
+
+    if (!page.isDone) {
+      await ctx.scheduler.runAfter(
+        0,
+        internal.transfers.backfillTransferHistoryEventIdsChunk,
+        { cursor: page.continueCursor },
+      );
+    }
+
+    return { processed: page.page.length, done: page.isDone };
+  },
+});
+
+export const backfillTransferRequestsEventIdsChunk = internalMutation({
+  args: { cursor: v.optional(v.string()) },
+  handler: async (ctx, { cursor }) => {
+    const page = await ctx.db
+      .query("transferRequests")
+      .order("asc")
+      .paginate({ numItems: 150, cursor: cursor ?? null });
+
+    for (const row of page.page) {
+      if (row.eventId) continue;
+      const ticket = await ctx.db.get(row.ticketId);
+      if (ticket)
+        await ctx.db.patch(row._id, { eventId: ticket.eventId });
+    }
+
+    if (!page.isDone) {
+      await ctx.scheduler.runAfter(
+        0,
+        internal.transfers.backfillTransferRequestsEventIdsChunk,
+        { cursor: page.continueCursor },
+      );
+    }
+
+    return { processed: page.page.length, done: page.isDone };
   },
 });

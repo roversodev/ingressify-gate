@@ -327,6 +327,12 @@ export type PublicApiType = {
       { organizationId: Id<"organizations"> },
       any
     >;
+    getOrgMemberEvents: FunctionReference<
+      "query",
+      "public",
+      { userId: string },
+      any
+    >;
     getPublishedEvents: FunctionReference<
       "query",
       "public",
@@ -893,6 +899,50 @@ export type PublicApiType = {
       { userId: string },
       any
     >;
+    getUserPromoterLinks: FunctionReference<
+      "query",
+      "public",
+      { userId: string },
+      any
+    >;
+    getPromoterByUserAndEvent: FunctionReference<
+      "query",
+      "public",
+      { userId: string; eventId: Id<"events"> },
+      any
+    >;
+    getPromoterAllowedTicketTypes: FunctionReference<
+      "query",
+      "public",
+      { promoterId: Id<"promoters"> },
+      any
+    >;
+    recordOfflineSale: FunctionReference<
+      "mutation",
+      "public",
+      {
+        eventId: Id<"events">;
+        promoterId: Id<"promoters">;
+        ticketTypeId: Id<"ticketTypes">;
+        quantity: number;
+        recipientEmail: string;
+        userId: string;
+        notes?: string;
+      },
+      any
+    >;
+    getPromoterDashboard: FunctionReference<
+      "query",
+      "public",
+      { promoterId: Id<"promoters"> },
+      any
+    >;
+    getPromoterTransactions: FunctionReference<
+      "query",
+      "public",
+      { promoterId: Id<"promoters"> },
+      any
+    >;
   };
   storage: {
     generateUploadUrl: FunctionReference<"mutation", "public", any, any>;
@@ -1321,7 +1371,7 @@ export type PublicApiType = {
     getTicketsWithDetailsByEmailOrCpf: FunctionReference<
       "query",
       "public",
-      { cpf?: string; email?: string; eventId?: Id<"events"> },
+      { search: string; eventId?: Id<"events"> },
       any
     >;
     getUserTickets: FunctionReference<

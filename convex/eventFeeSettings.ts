@@ -47,6 +47,8 @@ export const upsertEventFeeSettings = mutation({
     eventId: v.id("events"),
     pixFeePercentage: v.optional(v.number()),
     cardFeePercentage: v.optional(v.number()),
+    offlineFee: v.optional(v.number()),
+    absorbFees: v.optional(v.boolean()),
     useCustomFees: v.boolean(),
     userId: v.string(),
   },
@@ -57,21 +59,26 @@ export const upsertEventFeeSettings = mutation({
       .first();
 
     const now = Date.now();
+    const offlineFee = args.offlineFee !== undefined
+      ? Math.max(0, Math.min(1, args.offlineFee))
+      : undefined;
 
     if (existing) {
-      // Atualizar existente
       return await ctx.db.patch(existing._id, {
         pixFeePercentage: args.pixFeePercentage,
         cardFeePercentage: args.cardFeePercentage,
+        offlineFee,
+        absorbFees: args.absorbFees,
         useCustomFees: args.useCustomFees,
         updatedAt: now,
       });
     } else {
-      // Criar novo
       return await ctx.db.insert("eventFeeSettings", {
         eventId: args.eventId,
         pixFeePercentage: args.pixFeePercentage,
         cardFeePercentage: args.cardFeePercentage,
+        offlineFee,
+        absorbFees: args.absorbFees,
         useCustomFees: args.useCustomFees,
         createdAt: now,
         updatedAt: now,

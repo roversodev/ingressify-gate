@@ -339,6 +339,16 @@ export const validateTicket = mutation({
           event
         };
       }
+
+      if (ticket.isListedForResale) {
+        return {
+          success: false,
+          errorType: 'LISTED_FOR_RESALE',
+          message: 'Ingresso anunciado para revenda — cancele o anúncio antes de validar',
+          ticket,
+          event
+        };
+      }
       
       // Verificar status do ingresso
       if (ticket.status === "used") {
@@ -1502,7 +1512,14 @@ export const createTicketsFromTransaction = mutation({
             error: `O ingresso "${ticketType.name}" não está mais disponível para compra.`
           };
         }
-        
+
+        if (ticketType.offlineOnlySale === true) {
+          return {
+            success: false,
+            error: `O ingresso "${ticketType.name}" está disponível apenas na venda offline pelo promoter.`,
+          };
+        }
+
         if (ticketType.availableQuantity < selection.quantity) {
           return {
             success: false,
@@ -1684,40 +1701,83 @@ export const getTicketsByCpf = query({
   },
 });
 
-// Função para buscar ingressos com detalhes por email ou CPF
+// Função para buscar ingressos com detalhes por termo único (email, CPF ou nome)
 export const getTicketsWithDetailsByEmailOrCpf = query({
   args: {
-    email: v.optional(v.string()),
-    cpf: v.optional(v.string()),
+    search: v.string(),
     eventId: v.optional(v.id("events")),
   },
-  handler: async (ctx, { email, cpf, eventId }) => {
-    if (!email && !cpf) {
-      throw new Error("É necessário fornecer email ou CPF");
+  handler: async (ctx, { search, eventId }) => {
+    const term = search.trim();
+    if (!term) {
+      return [];
     }
 
-    // Buscar usuários por email ou CPF
-    let users: { userId: string; name: string; email: string; cpf: string; phone: string; }[] = [];
-    if (email) {
+    const lower = term.toLowerCase();
+    const digitsOnly = term.replace(/\D/g, "");
+
+    type UserRow = {
+      userId: string;
+      name: string;
+      email: string;
+      cpf: string;
+      phone: string;
+    };
+
+    const userMap = new Map<string, UserRow>();
+
+    const addUser = (u: {
+      userId: string;
+      name: string;
+      email: string;
+      cpf?: string | null;
+      phone?: string | null;
+    } | null | undefined) => {
+      if (!u?.userId) return;
+      userMap.set(u.userId, {
+        userId: u.userId,
+        name: u.name,
+        email: u.email,
+        cpf: u.cpf ?? "",
+        phone: u.phone ?? "",
+      });
+    };
+
+    if (term.includes("@")) {
       const user = await ctx.db
         .query("users")
-        .withIndex("by_email", (q) => q.eq("email", email))
+        .withIndex("by_email", (q) => q.eq("email", lower))
         .first();
-      if (user && user.cpf && user.phone) {
-        users.push({
-          userId: user.userId,
-          name: user.name,
-          email: user.email,
-          cpf: user.cpf,
-          phone: user.phone
-        });
-      }
-    } else if (cpf) {
-      users = await ctx.db
+      addUser(user);
+    } else if (digitsOnly.length === 11) {
+      const byDigits = await ctx.db
         .query("users")
-        .filter((q) => q.eq(q.field("cpf"), cpf))
-        .collect() as { userId: string; name: string; email: string; cpf: string; phone: string; }[];
+        .withIndex("by_cpf", (q) => q.eq("cpf", digitsOnly))
+        .collect();
+      for (const u of byDigits) addUser(u);
+      if (userMap.size === 0) {
+        const formatted = `${digitsOnly.slice(0, 3)}.${digitsOnly.slice(3, 6)}.${digitsOnly.slice(6, 9)}-${digitsOnly.slice(9, 11)}`;
+        const byFormatted = await ctx.db
+          .query("users")
+          .withIndex("by_cpf", (q) => q.eq("cpf", formatted))
+          .collect();
+        for (const u of byFormatted) addUser(u);
+      }
+    } else {
+      const byName = await ctx.db
+        .query("users")
+        .withSearchIndex("search_users", (q) => q.search("name", lower))
+        .take(50);
+      for (const u of byName) addUser(u);
+
+      const byEmail = await ctx.db
+        .query("users")
+        .withIndex("by_email", (q) => q.eq("email", lower))
+        .first();
+      addUser(byEmail);
     }
+
+    const users = Array.from(userMap.values());
 
     if (users.length === 0) {
       return [];

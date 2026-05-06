@@ -25,6 +25,11 @@ export default defineSchema({
     isPublicOnHomepage: v.optional(v.boolean()),
     isOnFire: v.optional(v.boolean()),
     allowTicketTransfers: v.optional(v.boolean()),
+    allowTicketResale: v.optional(v.boolean()),
+    status: v.optional(v.union(v.literal("pending_review"), v.literal("approved"), v.literal("rejected"))),
+    organizerPhone: v.optional(v.string()),
+    organizerEmail: v.optional(v.string()),
+    rejectionReason: v.optional(v.string()),
     customScripts: v.optional(v.object({
       metaPixel: v.optional(v.string()),
       googleAnalytics: v.optional(v.string()),
@@ -41,6 +46,7 @@ export default defineSchema({
     .index("by_slug", ["slug"])
     .index("by_organization", ["organizationId"])
     .index("by_public_homepage", ["isPublicOnHomepage"])
+    .index("by_status", ["status"])
     .searchIndex("search_events", {
       searchField: "name",
       filterFields: ["description", "location"]
@@ -52,6 +58,21 @@ export default defineSchema({
     visitedAt: v.number(),
   })
     .index("by_event_visitedAt", ["eventId", "visitedAt"]),
+
+  /**
+   * Agregação por dia civil (fuso BR) + histograma 24h — usado pelas estatísticas do dashboard.
+   * Evita `collect()` em dezenas de milhares de linhas em `eventSalesPageVisits`.
+   */
+  eventSalesPageVisitDayRollups: defineTable({
+    eventId: v.id("events"),
+    /** YYYY-MM-DD (America/Sao_Paulo), ordenável lexicograficamente */
+    dateKey: v.string(),
+    total: v.number(),
+    /** Contagem por hora local (0–23) para pico / diurno vs noturno */
+    hourCounts: v.array(v.number()),
+  })
+    .index("by_event_date", ["eventId", "dateKey"])
+    .index("by_event", ["eventId"]),
 
   /** Heartbeat de abas na página /tickets (último ping recente = “ao vivo”). */
   eventSalesPagePresence: defineTable({
@@ -90,6 +111,8 @@ export default defineSchema({
     dayId: v.optional(v.id("eventDays")),
     lotId: v.optional(v.id("ticketLots")),
     isPassport: v.optional(v.boolean()),
+    /** true = não aparece no site/checkout online; venda só via promoter (offline) */
+    offlineOnlySale: v.optional(v.boolean()),
 
     // Configurações de ativação automática
     activationSettings: v.optional(v.object({
@@ -301,6 +324,10 @@ export default defineSchema({
     courtesySentByName: v.optional(v.string()),
     /** E-mail normalizado do destinatário enquanto não há conta (userId = pending) */
     pendingRecipientEmail: v.optional(v.string()),
+    /** Marcado true enquanto há um listing de revenda ativo para este ingresso */
+    isListedForResale: v.optional(v.boolean()),
+    /** true se este ingresso foi adquirido via revenda */
+    acquiredViaResale: v.optional(v.boolean()),
   })
     .index("by_event", ["eventId"])
     .index("by_user", ["userId"])
@@ -361,6 +388,8 @@ export default defineSchema({
     profileComplete: v.optional(v.boolean()),
     sellerOnboarded: v.optional(v.boolean()),
     oneSignalPlayerIds: v.optional(v.array(v.string())),
+    /** Saldo disponível de revendas para saque */
+    resaleBalance: v.optional(v.number()),
   })
     .index("by_user_id", ["userId"])
     .index("by_email", ["email"])
@@ -409,8 +438,10 @@ export default defineSchema({
     .index("by_status", ["status"])
     .index("by_requested_at", ["requestedAt"]),
 
-    transferRequests: defineTable({
+  transferRequests: defineTable({
       ticketId: v.id("tickets"),
+      /** Denormalizado para filtrar pendentes por evento sem varrer todos os tickets */
+      eventId: v.optional(v.id("events")),
       fromUserId: v.string(),
       toUserEmail: v.string(),
       toUserId: v.optional(v.string()),
@@ -432,10 +463,13 @@ export default defineSchema({
     .index("by_from_user", ["fromUserId"])
     .index("by_to_email", ["toUserEmail"])
     .index("by_token", ["transferToken"])
-    .index("by_status", ["status"]),
+    .index("by_status", ["status"])
+    .index("by_event_status", ["eventId", "status"]),
 
   transferHistory: defineTable({
     ticketId: v.id("tickets"),
+    /** Denormalizado para estatísticas por evento sem `.collect()` global */
+    eventId: v.optional(v.id("events")),
     fromUserId: v.string(),
     toUserId: v.string(),
     transferredAt: v.number(),
@@ -443,7 +477,8 @@ export default defineSchema({
   })
     .index("by_ticket", ["ticketId"])
     .index("by_from_user", ["fromUserId"])
-    .index("by_to_user", ["toUserId"]),
+    .index("by_to_user", ["toUserId"])
+    .index("by_event_transferred_at", ["eventId", "transferredAt"]),
 
   pendingEmails: defineTable({
     transactionId: v.string(),
@@ -712,6 +747,8 @@ export default defineSchema({
     eventId: v.id("events"),
     pixFeePercentage: v.optional(v.number()),
     cardFeePercentage: v.optional(v.number()),
+    offlineFee: v.optional(v.number()),
+    absorbFees: v.optional(v.boolean()),
     useCustomFees: v.boolean(),
     createdAt: v.number(),
     updatedAt: v.number(),
@@ -828,6 +865,74 @@ export default defineSchema({
     .index("by_updated_at", ["lastUpdatedAt"])
     .index("by_status", ["status"]),
 
+
+  /** Listings de revenda de ingressos criados por usuários */
+  ticketResaleListings: defineTable({
+    ticketId: v.id("tickets"),
+    eventId: v.id("events"),
+    sellerId: v.string(),
+    sellerName: v.string(),
+    resalePrice: v.number(),
+    platformFeePercentage: v.number(),
+    platformFeeAmount: v.number(),
+    sellerReceives: v.number(),
+    status: v.union(
+      v.literal("active"),
+      v.literal("sold"),
+      v.literal("expired"),
+      v.literal("cancelled"),
+      v.literal("refunded")
+    ),
+    token: v.string(),
+    createdAt: v.number(),
+    expiresAt: v.number(),
+    soldAt: v.optional(v.number()),
+    buyerId: v.optional(v.string()),
+    buyerEmail: v.optional(v.string()),
+    buyerName: v.optional(v.string()),
+    transactionId: v.optional(v.string()),
+    /** Valor líquido reportado pelo Mercado Pago (`transaction_details.net_received_amount`) após a venda */
+    netReceivedAmount: v.optional(v.number()),
+    newTicketId: v.optional(v.id("tickets")),
+    refundedAt: v.optional(v.number()),
+  })
+    .index("by_token", ["token"])
+    .index("by_ticket", ["ticketId"])
+    .index("by_seller", ["sellerId"])
+    .index("by_event", ["eventId"])
+    .index("by_status", ["status"])
+    .index("by_created_at", ["createdAt"])
+    .index("by_transaction", ["transactionId"]),
+
+  /** Solicitações de saque do saldo de revenda */
+  resaleWithdrawals: defineTable({
+    userId: v.string(),
+    amount: v.number(),
+    status: v.union(
+      v.literal("pending"),
+      v.literal("processing"),
+      v.literal("completed"),
+      v.literal("failed"),
+      v.literal("cancelled")
+    ),
+    pixKey: v.object({
+      keyType: v.union(
+        v.literal("cpf"),
+        v.literal("cnpj"),
+        v.literal("email"),
+        v.literal("phone"),
+        v.literal("random")
+      ),
+      key: v.string(),
+    }),
+    requestedAt: v.number(),
+    processedAt: v.optional(v.number()),
+    adminNotes: v.optional(v.string()),
+    transactionId: v.optional(v.string()),
+  })
+    .index("by_user", ["userId"])
+    .index("by_status", ["status"])
+    .index("by_requested_at", ["requestedAt"]),
 
   /** Solicitações de push notification criadas por produtores vinculados a eventos. */
   pushNotificationRequests: defineTable({

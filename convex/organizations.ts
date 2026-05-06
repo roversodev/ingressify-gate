@@ -2,7 +2,7 @@ import { GenericId, v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import { Doc, Id } from "./_generated/dataModel";
 import { feeCalculations } from "../lib/fees";
-const { calculateProducerAmount } = feeCalculations;
+const { onlinePaidProducerAmountFromTransaction } = feeCalculations;
 
 /**
  * Impacto no saldo disponível: débitos (saque) somam; créditos só após concluído reduzem (estorno na plataforma).
@@ -691,17 +691,22 @@ export const getOrganizationFinancialStats = query({
           .first();
 
         for (const transaction of transactions) {
-          // Valor total da transação (inclui taxa da plataforma)
+          const pm = transaction.paymentMethod || "";
+          if (pm === "OFFLINE_ADJUSTMENT" || pm === "OFFLINE_ADJUSTMENT_REFUND") {
+            continue;
+          }
+
+          // Bruto cobrado ao comprador (checkout online)
           stats.totalEarnings += transaction.amount;
 
-          const discountAmount = transaction.metadata?.discountAmount || 0;
-          const paymentMethod = (transaction.paymentMethod === "credit_card" || transaction.paymentMethod === "CARD") ? "CARD" : "PIX";
+          const paymentMethod =
+            transaction.paymentMethod === "credit_card" || transaction.paymentMethod === "CARD"
+              ? "CARD"
+              : "PIX";
 
-          const sellerAmount = calculateProducerAmount(
-            transaction.metadata?.baseAmount || transaction.amount,
-            discountAmount,
-            paymentMethod,
-            eventFeeSettings || undefined
+          const sellerAmount = onlinePaidProducerAmountFromTransaction(
+            transaction,
+            eventFeeSettings || undefined,
           );
 
           stats.totalEarningsWithDiscount += sellerAmount;
@@ -958,14 +963,14 @@ export const requestWithdrawal = mutation({
           .collect();
 
         for (const tx of transactions) {
-          const discountAmount = tx.metadata?.discountAmount || 0;
-          const paymentMethod = (tx.paymentMethod === "credit_card" || tx.paymentMethod === "CARD") ? "CARD" : "PIX";
-          
-          const sellerAmount = calculateProducerAmount(
-            tx.metadata?.baseAmount || tx.amount,
-            discountAmount,
-            paymentMethod,
-            feeSettings || undefined
+          const pm = tx.paymentMethod || "";
+          if (pm === "OFFLINE_ADJUSTMENT" || pm === "OFFLINE_ADJUSTMENT_REFUND") {
+            continue;
+          }
+
+          const sellerAmount = onlinePaidProducerAmountFromTransaction(
+            tx,
+            feeSettings || undefined,
           );
 
           // D+0: Disponível imediatamente (conforme dashboard)
@@ -1509,17 +1514,22 @@ export const getOrganizationFinancialSummary = query({
           continue;
         }
 
-        // Valor total da transação (incluindo taxa da plataforma)
+        const pm = transaction.paymentMethod || "";
+        if (pm === "OFFLINE_ADJUSTMENT" || pm === "OFFLINE_ADJUSTMENT_REFUND") {
+          continue;
+        }
+
+        // Bruto cobrado ao comprador (checkout online)
         summary.totalEarnings += transaction.amount;
 
-        const discountAmount = transaction.metadata?.discountAmount || 0;
-        const paymentMethod = (transaction.paymentMethod === "credit_card" || transaction.paymentMethod === "CARD") ? "CARD" : "PIX";
+        const paymentMethod =
+          transaction.paymentMethod === "credit_card" || transaction.paymentMethod === "CARD"
+            ? "CARD"
+            : "PIX";
 
-        const sellerAmount = calculateProducerAmount(
-          transaction.metadata?.baseAmount || transaction.amount,
-          discountAmount,
-          paymentMethod,
-          eventFeeSettings || undefined
+        const sellerAmount = onlinePaidProducerAmountFromTransaction(
+          transaction,
+          eventFeeSettings || undefined,
         );
 
         summary.totalEarningsWithDiscount += sellerAmount;
@@ -1618,16 +1628,17 @@ export const getOrganizationEventNetBalances = query({
 
       for (const transaction of transactions) {
         if (transaction.status === "charged_back") continue;
-        const discountAmount = transaction.metadata?.discountAmount || 0;
+        const pm = transaction.paymentMethod || "";
+        if (pm === "OFFLINE_ADJUSTMENT" || pm === "OFFLINE_ADJUSTMENT_REFUND") {
+          continue;
+        }
         const paymentMethod =
           transaction.paymentMethod === "credit_card" || transaction.paymentMethod === "CARD"
             ? "CARD"
             : "PIX";
-        const sellerAmount = calculateProducerAmount(
-          transaction.metadata?.baseAmount || transaction.amount,
-          discountAmount,
-          paymentMethod,
-          feeSettings || undefined
+        const sellerAmount = onlinePaidProducerAmountFromTransaction(
+          transaction,
+          feeSettings || undefined,
         );
         if (paymentMethod === "CARD") cardAvailable += sellerAmount;
         else pixAvailable += sellerAmount;
@@ -1904,13 +1915,9 @@ export const getOrganizationCardTransactionsForReleasesPaginated = query({
           .withIndex("by_event", (q) => q.eq("eventId", transaction.eventId))
           .first();
 
-        // Calcular valor líquido
-        const discountAmount = transaction.metadata?.discountAmount || 0;
-        const sellerAmount = calculateProducerAmount(
-          transaction.metadata?.baseAmount || transaction.amount,
-          discountAmount,
-          "CARD",
-          eventFeeSettings || undefined
+        const sellerAmount = onlinePaidProducerAmountFromTransaction(
+          transaction,
+          eventFeeSettings || undefined,
         );
 
         return {
@@ -2049,6 +2056,45 @@ export const getOrganizationOfflineSalesSummary = query({
 });
 
 
+
+// Resumo de vendas offline por evento (sem verificação de membership para uso interno)
+export const getEventOfflineSalesSummary = query({
+  args: { eventId: v.id("events") },
+  handler: async (ctx, { eventId }) => {
+    const sales = await ctx.db
+      .query("offlineSales")
+      .withIndex("by_event", (q) => q.eq("eventId", eventId))
+      .filter((q) =>
+        q.or(q.eq(q.field("status"), "recorded"), q.eq(q.field("status"), "settled"))
+      )
+      .collect();
+
+    const totalAmount = sales.reduce((s, x) => s + (x.totalAmount || 0), 0);
+    const totalTickets = sales.reduce((s, x) => s + (x.quantity || 0), 0);
+    const paidSales = sales.filter(
+      (x) => Math.round((x.totalAmount ?? 0) * 100) > 0,
+    );
+    const totalPaidAmount = paidSales.reduce((s, x) => s + (x.totalAmount || 0), 0);
+    const totalPaidTickets = paidSales.reduce((s, x) => s + (x.quantity || 0), 0);
+    const totalCommission = sales.reduce((s, x) => s + (x.commissionAmount || 0), 0);
+    const totalProducerFee = sales.reduce((s, x) => s + (x.producerFeeAmount || 0), 0);
+    const totalProducerReceipt = sales.reduce(
+      (s, x) => s + (x.amountOwedToProducer ?? 0) - (x.producerFeeAmount ?? 0),
+      0,
+    );
+
+    return {
+      totalAmount,
+      totalTickets,
+      totalPaidAmount,
+      totalPaidTickets,
+      totalCommission,
+      totalProducerFee,
+      totalProducerReceipt,
+      count: sales.length,
+    };
+  },
+});
 
 // Solicitar crédito (depósito) para organização
 export const requestCredit = mutation({

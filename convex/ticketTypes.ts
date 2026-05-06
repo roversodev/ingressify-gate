@@ -25,7 +25,9 @@ export const getEventTicketTypes = query({
       q = q.filter((qq) => qq.eq(qq.field("lotId"), lotId));
     }
 
-    const ticketTypes = await q.order("asc").collect();
+    const ticketTypes = (await q.order("asc").collect()).filter(
+      (tt) => tt.offlineOnlySale !== true,
+    );
 
     // Recalcular disponibilidade dinamicamente para corrigir inconsistências
     const ticketTypesWithAvailability = await Promise.all(
@@ -99,18 +101,25 @@ export const createTicketType = mutation({
       )),
       deactivateAt: v.optional(v.number()),
     })),
+    offlineOnlySale: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
-    const { price, isCourtesy, isActive, maxPerUser, activationSettings, ...ticketTypeData } = args;
-    
+    const { price, isCourtesy, isActive, maxPerUser, activationSettings, offlineOnlySale, ...ticketTypeData } = args;
+
+    const isCourtesyFlag = isCourtesy || false;
+    if (isCourtesyFlag && Math.round(price * 100) !== 0) {
+      throw new Error("Ingresso cortesia deve ter preço R$ 0,00");
+    }
+
     return await ctx.db.insert("ticketTypes", {
       ...ticketTypeData,
       availableQuantity: args.totalQuantity,
-      currentPrice: price,
-      isCourtesy: isCourtesy || false,
+      currentPrice: isCourtesyFlag ? 0 : price,
+      isCourtesy: isCourtesyFlag,
       isActive: isActive === undefined ? true : isActive,
       maxPerUser: maxPerUser,
       activationSettings: activationSettings,
+      offlineOnlySale: !isCourtesyFlag && offlineOnlySale === true,
     });
   },
 });
@@ -132,7 +141,14 @@ export const checkAvailability = query({
     if (ticketType.isCourtesy) {
       return { available: false, reason: "Ingressos cortesia não estão disponíveis para venda" };
     }
-    
+
+    if (ticketType.offlineOnlySale === true) {
+      return {
+        available: false,
+        reason: "Este ingresso está disponível apenas na venda offline pelo promoter",
+      };
+    }
+
     if (ticketType.availableQuantity < requestedQuantity) {
       return { 
         available: false, 
@@ -178,9 +194,10 @@ export const updateTicketType = mutation({
       )),
       deactivateAt: v.optional(v.number()),
     })),
+    offlineOnlySale: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
-    const { ticketTypeId, price, isCourtesy, isActive, maxPerUser, activationSettings, ...updates } = args;
+    const { ticketTypeId, price, isCourtesy, isActive, maxPerUser, activationSettings, offlineOnlySale, ...updates } = args;
     
     const ticketType = await ctx.db.get(ticketTypeId);
     if (!ticketType) throw new Error("Tipo de ingresso não encontrado");
@@ -193,16 +210,29 @@ export const updateTicketType = mutation({
     if (newAvailableQuantity < 0) {
       throw new Error("Não é possível reduzir a quantidade total abaixo dos ingressos já vendidos");
     }
-    
+
+    const nextIsCourtesy =
+      isCourtesy === undefined ? ticketType.isCourtesy : !!isCourtesy;
+    if (nextIsCourtesy && Math.round(price * 100) !== 0) {
+      throw new Error("Ingresso cortesia deve ter preço R$ 0,00");
+    }
+
+    const nextOfflineOnly = nextIsCourtesy
+      ? false
+      : offlineOnlySale === undefined
+        ? ticketType.offlineOnlySale === true
+        : offlineOnlySale === true;
+
     await ctx.db.patch(ticketTypeId, {
       ...updates,
-      currentPrice: price,
+      currentPrice: nextIsCourtesy ? 0 : price,
       availableQuantity: newAvailableQuantity,
       totalQuantity: args.totalQuantity,
-      isCourtesy: isCourtesy || false,
+      isCourtesy: nextIsCourtesy,
       isActive: isActive === undefined ? true : isActive,
       maxPerUser: maxPerUser,
       activationSettings: activationSettings,
+      offlineOnlySale: nextOfflineOnly,
     });
     
     return ticketTypeId;
@@ -286,7 +316,7 @@ export const getEventCourtesyTicketTypes = query({
   },
 });
 
-/** Tipos de ingresso disponíveis para envio de cortesias: qualquer tipo ativo (venda ou cortesia), com labels de Dia/Lote para UX */
+/** Tipos de ingresso para envio de cortesias: apenas ativos, marcados como cortesia e com preço zerado */
 export const getEventTicketTypesForCourtesy = query({
   args: { eventId: v.id("events") },
   handler: async (ctx, { eventId }) => {
@@ -294,9 +324,15 @@ export const getEventTicketTypesForCourtesy = query({
       .query("ticketTypes")
       .withIndex("by_event", (q) => q.eq("eventId", eventId))
       .collect();
-    // Incluir todos os tipos ativos (não filtrar por isCourtesy — qualquer tipo pode ser enviado como cortesia)
+    const priceZeroCents = (p: number | undefined) =>
+      Math.round((p ?? 0) * 100) === 0;
     const activeTicketTypes = ticketTypes
-      .filter((tt) => tt.isActive === true)
+      .filter(
+        (tt) =>
+          tt.isActive === true &&
+          tt.isCourtesy === true &&
+          priceZeroCents(tt.currentPrice)
+      )
       .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
 
     const days = await ctx.db
@@ -455,6 +491,7 @@ export const getTicketTypesForManagement = query({
           availableQuantity: availableQuantity,
           activationSettings: ticketType.activationSettings,
           isPassport: ticketType.isPassport || false,
+          offlineOnlySale: ticketType.offlineOnlySale === true,
         };
       })
     );
@@ -502,6 +539,7 @@ export const upsertTicketType = mutation({
       buyQuantity: v.number(),
       getQuantity: v.number(),
     })),
+    offlineOnlySale: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const { ticketTypeId, eventId, dayId, lotId, ...ticketData } = args;
@@ -547,18 +585,33 @@ export const upsertTicketType = mutation({
       // Calcular nova quantidade disponível
       const newAvailableQuantity = ticketData.totalQuantity - soldQuantity;
 
+      const nextIsCourtesy =
+        ticketData.isCourtesy ?? existingTicketType.isCourtesy;
+      if (nextIsCourtesy && Math.round(ticketData.price * 100) !== 0) {
+        return {
+          success: false,
+          message: "Ingresso cortesia deve ter preço R$ 0,00",
+        };
+      }
+
+      const nextOfflineOnly =
+        nextIsCourtesy
+          ? false
+          : ticketData.offlineOnlySale === true;
+
       await ctx.db.patch(ticketTypeId, {
         name: ticketData.name,
         description: ticketData.description,
         totalQuantity: ticketData.totalQuantity,
         availableQuantity: newAvailableQuantity, // Atualizar quantidade disponível
-        currentPrice: ticketData.price, // Mapear price para currentPrice
+        currentPrice: nextIsCourtesy ? 0 : ticketData.price, // Mapear price para currentPrice
         isActive: ticketData.isActive ?? true,
-        isCourtesy: ticketData.isCourtesy ?? false,
+        isCourtesy: nextIsCourtesy,
         isPassport: ticketData.isPassport ?? existingTicketType.isPassport,
         maxPerUser: ticketData.maxPerUser,
         activationSettings: ticketData.activationSettings,
         buyXGetY: ticketData.buyXGetY,
+        offlineOnlySale: nextOfflineOnly,
         sortOrder: ticketData.sortOrder ?? existingTicketType.sortOrder,
         dayId,
         lotId,
@@ -584,19 +637,31 @@ export const upsertTicketType = mutation({
           : 0;
       }
 
+      const isCourtesyInsert = ticketData.isCourtesy ?? false;
+      if (isCourtesyInsert && Math.round(ticketData.price * 100) !== 0) {
+        return {
+          success: false,
+          message: "Ingresso cortesia deve ter preço R$ 0,00",
+        };
+      }
+
+      const offlineOnlyInsert =
+        !isCourtesyInsert && ticketData.offlineOnlySale === true;
+
       const newTicketTypeId = await ctx.db.insert("ticketTypes", {
         eventId,
         name: ticketData.name,
         description: ticketData.description,
         totalQuantity: ticketData.totalQuantity,
         availableQuantity: ticketData.totalQuantity, // Inicialmente igual à quantidade total
-        currentPrice: ticketData.price, // Mapear price para currentPrice
+        currentPrice: isCourtesyInsert ? 0 : ticketData.price, // Mapear price para currentPrice
         isActive: ticketData.isActive ?? true,
-        isCourtesy: ticketData.isCourtesy ?? false,
+        isCourtesy: isCourtesyInsert,
         isPassport: ticketData.isPassport ?? false,
         maxPerUser: ticketData.maxPerUser,
         activationSettings: ticketData.activationSettings,
         buyXGetY: ticketData.buyXGetY,
+        offlineOnlySale: offlineOnlyInsert,
         sortOrder,
         dayId,
         lotId,
@@ -676,6 +741,12 @@ export const validateTicketsForCheckout = query({
       if (!ticketType.isActive) {
         isValid = false;
         error = `O ingresso "${ticketType.name}" não está mais disponível para venda`;
+        validationErrors.push(error);
+      }
+
+      if (ticketType.offlineOnlySale === true) {
+        isValid = false;
+        error = `O ingresso "${ticketType.name}" está disponível apenas na venda offline (promoter).`;
         validationErrors.push(error);
       }
 

@@ -2,7 +2,7 @@ import { GenericId, v } from "convex/values";
 import { mutation, query, action } from "./_generated/server";
 import { Doc, Id } from "./_generated/dataModel";
 import { feeCalculations } from "../lib/fees";
-const { calculateProducerAmount } = feeCalculations;
+const { calculateProducerAmount, onlinePaidProducerAmountFromTransaction } = feeCalculations;
 
 // Verificar se um usuário é admin e suas permissões
 export const checkAdminStatus = query({
@@ -1682,6 +1682,7 @@ export const getPlatformFinancialMetrics = query({
         discountAmount,
         paymentMethod,
         feeSettings || undefined,
+        tx.metadata,
       );
       const platformFee = chargedAmount - producerAmount;
 
@@ -4071,24 +4072,19 @@ export const getEventsPageData = query({
           .withIndex("by_event", (q) => q.eq("eventId", event._id))
           .first();
           
-        const customFeeSettings = feeSettings ? {
-            pixFeePercentage: feeSettings.pixFeePercentage,
-            cardFeePercentage: feeSettings.cardFeePercentage,
-            useCustomFees: true
-        } : null;
+        const customFeeSettings = feeSettings?.useCustomFees
+          ? {
+              pixFeePercentage: feeSettings.pixFeePercentage,
+              cardFeePercentage: feeSettings.cardFeePercentage,
+              useCustomFees: true as const,
+            }
+          : undefined;
 
         // Buscar transações do evento
         const transactions = await ctx.db
           .query("transactions")
           .withIndex("by_event", (q) => q.eq("eventId", event._id))
           .collect();
-          
-        // Filtrar transações pagas
-        const paidTransactions = transactions.filter(t => 
-            (t.status === 'paid' || t.status === 'completed') && 
-            t.paymentMethod !== 'free' && 
-            t.amount > 0
-        );
 
         // Buscar saques completados (apenas se tiver organizationId)
         let totalWithdrawn = 0;
@@ -4105,7 +4101,7 @@ export const getEventsPageData = query({
             totalWithdrawn = eventWithdrawals.reduce((sum, w) => sum + w.amount, 0);
         }
 
-        // Calcular métricas
+        // Calcular métricas (checkout online + ajustes OFFLINE_ADJUSTMENT*, alinhado ao saldo produtor na app)
         let totalRevenue = 0;
         let totalProducerAmount = 0;
         let totalPlatformFees = 0;
@@ -4116,61 +4112,69 @@ export const getEventsPageData = query({
         let cardRevenue = 0;
         let pixTransactionCount = 0;
         let cardTransactionCount = 0;
+        let offlineAdjustmentTotal = 0;
+        let offlineAdjustmentCount = 0;
+        /** Transações checkout pagas válidas para bruto/receitas (exc. free e offline ledger) */
+        let paidOnlineCheckoutCount = 0;
 
-        paidTransactions.forEach((transaction) => {
-            const totalAmount = transaction.metadata?.baseAmount ? parseFloat(transaction.metadata.baseAmount) : transaction.amount;
-            const discountAmount = transaction.metadata?.discountAmount ? parseFloat(transaction.metadata.discountAmount) : 0;
-            const paymentMethod = (transaction.paymentMethod === 'pix') ? 'PIX' : 'CARD';
-            
-            const producerAmount = calculateProducerAmount(
-                totalAmount,
-                discountAmount,
-                paymentMethod,
-                customFeeSettings || undefined
+        for (const transaction of transactions) {
+            const st = transaction.status;
+            const isLiquidStatus = st === "paid" || st === "completed";
+            if (!isLiquidStatus) continue;
+
+            const pm = transaction.paymentMethod || "";
+
+            // Lançamentos de taxa/desconto offline (podem ser negativos ou reembolso ledger)
+            if (pm === "OFFLINE_ADJUSTMENT" || pm === "OFFLINE_ADJUSTMENT_REFUND") {
+                offlineAdjustmentTotal += transaction.amount;
+                offlineAdjustmentCount++;
+                continue;
+            }
+
+            if (pm === "free") continue;
+
+            const producerCheckout = onlinePaidProducerAmountFromTransaction(
+                transaction,
+                customFeeSettings,
             );
-            
-            const platformFee = totalAmount - producerAmount;
-            
-            totalRevenue += totalAmount;
-            totalProducerAmount += producerAmount;
-            totalPlatformFees += platformFee;
-            
-            if (paymentMethod === 'PIX') {
-                pixRevenue += totalAmount;
-                pixAvailable += producerAmount;
-                pixTransactionCount++;
-            } else {
-                cardRevenue += totalAmount;
+
+            const totalAmountOnline = transaction.amount;
+            totalRevenue += totalAmountOnline;
+            totalProducerAmount += producerCheckout;
+            totalPlatformFees += totalAmountOnline - producerCheckout;
+            paidOnlineCheckoutCount++;
+
+            const isCard =
+              pm === "credit_card" || pm === "CARD";
+            if (isCard) {
+                cardRevenue += totalAmountOnline;
                 cardTransactionCount++;
                 if (isCardTransactionReleased(transaction)) {
-                    cardAvailable += producerAmount;
+                    cardAvailable += producerCheckout;
                 } else {
-                    cardInRelease += producerAmount;
+                    cardInRelease += producerCheckout;
                 }
+            } else {
+                pixRevenue += totalAmountOnline;
+                pixAvailable += producerCheckout;
+                pixTransactionCount++;
             }
-        });
-
-        // Aplicar desconto dos saques
-        const totalAvailableBeforeWithdrawals = pixAvailable + cardAvailable;
-        
-        if (totalAvailableBeforeWithdrawals > 0 && totalWithdrawn > 0) {
-            const pixProportion = pixAvailable / totalAvailableBeforeWithdrawals;
-            const cardProportion = cardAvailable / totalAvailableBeforeWithdrawals;
-            
-            const pixWithdrawalDeduction = Math.min(pixAvailable, totalWithdrawn * pixProportion);
-            const cardWithdrawalDeduction = Math.min(cardAvailable, totalWithdrawn * cardProportion);
-            
-            pixAvailable = Math.max(0, pixAvailable - pixWithdrawalDeduction);
-            cardAvailable = Math.max(0, cardAvailable - cardWithdrawalDeduction);
         }
+
+        /** Saldo disponível ao produtor: líquido online (PIX+CARTÃO) + ajustes offline, menos saques do evento. */
+        const grossProducerPool =
+            pixAvailable + cardAvailable + offlineAdjustmentTotal;
+        const producerAvailableBalance = Math.max(0, grossProducerPool - totalWithdrawn);
 
         return {
             ...event,
             revenue: totalRevenue,
             producerAmount: totalProducerAmount,
+            offlineAdjustmentTotal,
+            offlineAdjustmentCount,
             platformFees: totalPlatformFees,
             transactionCount: transactions.length,
-            paidTransactionCount: paidTransactions.length,
+            paidTransactionCount: paidOnlineCheckoutCount + offlineAdjustmentCount,
             pixAvailable,
             cardInRelease,
             cardAvailable,
@@ -4178,6 +4182,8 @@ export const getEventsPageData = query({
             cardRevenue,
             pixTransactionCount,
             cardTransactionCount,
+            grossProducerPool,
+            producerAvailableBalance,
             totalWithdrawn
         };
       })
@@ -4372,6 +4378,7 @@ export const getTransactionsExportPage = query({
             desconto,
             paymentMethod as any,
             feeSettingsForTx,
+            meta,
           );
         }
       }
@@ -4632,6 +4639,7 @@ async function computePlatformBalances(
       discountAmount,
       paymentMethod,
       feeSettings || undefined,
+      tx.metadata,
     );
 
     if (paymentMethod === "PIX") {

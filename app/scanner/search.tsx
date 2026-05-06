@@ -9,7 +9,6 @@ import {
     ActivityIndicator,
     Animated,
     FlatList,
-    Platform,
     Text,
     TextInput,
     TouchableOpacity,
@@ -23,7 +22,6 @@ export default function SearchTicketsScreen() {
     const router = useRouter();
     const { user } = useUser();
 
-    const [searchType, setSearchType] = useState<'email' | 'cpf'>('email');
     const [searchValue, setSearchValue] = useState('');
     const [isSearching, setIsSearching] = useState(false);
     // Responsividade: detectar iPad/orientação e ajustar escalas de UI
@@ -64,26 +62,12 @@ export default function SearchTicketsScreen() {
     const event = useQuery(api.events.getById, { eventId: eventId as Id<"events"> });
     const validateTicketMutation = useMutation(api.tickets.validateTicket);
 
-    // Função para formatar CPF
-    const formatCpf = (cpf: string) => {
-        // Remove caracteres não numéricos
-        const numbers = cpf.replace(/[^0-9]/g, '');
-    
-        // Verifica se tem 11 dígitos
-        if (numbers.length !== 11) return cpf;
-
-        // Formata no padrão XXX.XXX.XXX-XX
-        return numbers.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, "$1.$2.$3-$4");
-    };
-
-    // Hooks para buscar ingressos com detalhes completos
+    // Hooks para buscar ingressos com detalhes completos (email, CPF ou nome)
     const getTicketsWithDetails = useQuery(
         api.tickets.getTicketsWithDetailsByEmailOrCpf,
-        searchValue ? {
-            ...(searchType === 'email' ? { email: searchValue.trim() } : {}),
-            ...(searchType === 'cpf' ? { cpf: formatCpf(searchValue.trim()) } : {}),
-            eventId: eventId as Id<"events">
-        } : "skip"
+        searchValue.trim()
+            ? { search: searchValue.trim(), eventId: eventId as Id<"events"> }
+            : "skip"
     );
 
     // Função para buscar ingressos
@@ -117,7 +101,7 @@ export default function SearchTicketsScreen() {
             
             return () => clearTimeout(debounceTimer);
         }
-    }, [searchValue, searchType]);
+    }, [searchValue]);
 
     // Função para validar um ingresso
     const handleValidateTicket = async (ticketId: string) => {
@@ -309,45 +293,14 @@ export default function SearchTicketsScreen() {
                     maxWidth: maxContentWidth,
                 }}
             >
-                {/* Search Type Buttons */}
-                <View className="flex-row mb-3">
-                    <TouchableOpacity
-                        className={`flex-1 items-center border-b-2 ${searchType === 'email' ? 'border-b-primary' : 'border-b-transparent'}`}
-                        onPress={() => setSearchType('email')}
-                        style={{ paddingVertical: isTablet ? 10 : 8 }}
-                        activeOpacity={1}
-                    >
-                        <Text
-                            style={{ fontSize: inputFont }}
-                            className={`${searchType === 'email' ? 'text-primary' : 'text-gray-400'}`}
-                        >
-                            Email
-                        </Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                        className={`flex-1 items-center border-b-2 ${searchType === 'cpf' ? 'border-b-primary' : 'border-b-transparent'}`}
-                        onPress={() => setSearchType('cpf')}
-                        style={{ paddingVertical: isTablet ? 10 : 8 }}
-                        activeOpacity={1}
-                    >
-                        <Text
-                            style={{ fontSize: inputFont }}
-                            className={`${searchType === 'cpf' ? 'text-primary' : 'text-gray-400'}`}
-                        >
-                            CPF
-                        </Text>
-                    </TouchableOpacity>
-                </View>
-
                 {/* Search Input */}
                 <TextInput
                     className="bg-zinc-700 text-white rounded-lg mb-3"
-                    placeholder={searchType === 'email' ? 'Digite o email do comprador' : 'Digite o CPF do comprador'}
+                    placeholder="Email, CPF ou nome do comprador"
                     placeholderTextColor="#999"
                     value={searchValue}
                     onChangeText={setSearchValue}
-                    keyboardType={searchType === 'email' ? 'email-address' : (Platform.OS === 'ios' ? 'number-pad' : 'numeric')}
+                    keyboardType="default"
                     autoCapitalize="none"
                     style={{
                         fontSize: inputFont,
@@ -391,12 +344,12 @@ export default function SearchTicketsScreen() {
                     !isSearching && searchValue.trim().length > 0 ? (
                         <View className="items-center justify-center py-8">
                             <Text className="text-white font-bold mb-2" style={{ fontSize: titleFont }}>Nenhum resultado encontrado</Text>
-                            <Text className="text-gray-300" style={{ fontSize: subFont }}>Tente outro email ou CPF</Text>
+                            <Text className="text-gray-300" style={{ fontSize: subFont }}>Tente outro email, CPF ou nome</Text>
                         </View>
                     ) : !isSearching ? (
                         <View className="items-center justify-center py-8">
                             <Text className="text-white font-bold mb-2" style={{ fontSize: titleFont }}>Busque por ingressos</Text>
-                            <Text className="text-gray-300" style={{ fontSize: subFont }}>Digite um email ou CPF para buscar</Text>
+                            <Text className="text-gray-300" style={{ fontSize: subFont }}>Digite email, CPF ou nome para buscar</Text>
                         </View>
                     ) : null
                 )}

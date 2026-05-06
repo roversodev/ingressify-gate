@@ -1,13 +1,14 @@
-import { query, mutation } from "./_generated/server";
+import { query, mutation, type QueryCtx, type MutationCtx } from "./_generated/server";
 import { GenericId, v } from "convex/values";
 import { paginationOptsValidator } from "convex/server";
-import { Id } from "./_generated/dataModel";
+import { Id, type Doc } from "./_generated/dataModel";
 import {
   normalizeCourtesyEmail,
   PENDING_COURTESY_USER_ID,
 } from "./courtesyHelpers";
 import { feeCalculations } from "../lib/fees";
-const { calculateProducerAmount } = feeCalculations;
+import { netWithdrawalAmountForBalance } from "./organizations";
+const { calculateProducerAmount, onlinePaidProducerAmountFromTransaction } = feeCalculations;
 
 export type Metrics = {
   soldTickets: number;
@@ -19,6 +20,29 @@ export type Metrics = {
   totalDiscounts: number; // Total de descontos aplicados
   totalTickets: number;
 };
+
+const USER_LOOKUP_BATCH = 80;
+
+async function loadUsersBatch(
+  ctx: QueryCtx,
+  userIds: string[],
+): Promise<Map<string, Doc<"users"> | null>> {
+  const unique = [...new Set(userIds)];
+  const map = new Map<string, Doc<"users"> | null>();
+  for (let i = 0; i < unique.length; i += USER_LOOKUP_BATCH) {
+    const slice = unique.slice(i, i + USER_LOOKUP_BATCH);
+    const rows = await Promise.all(
+      slice.map((uid) =>
+        ctx.db
+          .query("users")
+          .withIndex("by_user_id", (q) => q.eq("userId", uid))
+          .first(),
+      ),
+    );
+    slice.forEach((uid, j) => map.set(uid, rows[j] ?? null));
+  }
+  return map;
+}
 
 export const get = query({
   args: {},
@@ -200,20 +224,17 @@ export const getEventMetrics = query({
     let totalDiscounts = 0;
 
     for (const transaction of paidTransactions) {
-      const discountAmount = transaction.metadata?.discountAmount || 0;
-      const paymentMethod = transaction.paymentMethod === "CARD" ? "CARD" : "PIX";
-      
-      // Usar snapshot das taxas se disponível na transação, caso contrário usar as configurações atuais
-      const feeSettings = transaction.metadata?.feeSnapshot || eventFeeSettings || undefined;
+      const pm = transaction.paymentMethod || "";
+      if (pm === "OFFLINE_ADJUSTMENT" || pm === "OFFLINE_ADJUSTMENT_REFUND") {
+        continue;
+      }
 
-      // Calcular valor líquido para o produtor
-      const sellerAmount = calculateProducerAmount(
-        transaction.amount,
-        discountAmount,
-        paymentMethod,
-        feeSettings,
+      const discountAmount = transaction.metadata?.discountAmount || 0;
+      const sellerAmount = onlinePaidProducerAmountFromTransaction(
+        transaction,
+        eventFeeSettings || undefined,
       );
-      
+
       netRevenue += sellerAmount;
       grossRevenue += transaction.amount;
       totalDiscounts += discountAmount;
@@ -227,6 +248,10 @@ export const getEventMetrics = query({
       return sum + parseTicketSelectionsQuantity(tx.metadata?.ticketSelections);
     }, 0);
     const soldTicketsQuantityFromPaidTransactions = paidTransactions.reduce((sum, tx) => {
+      const pm = tx.paymentMethod || "";
+      if (pm === "OFFLINE_ADJUSTMENT" || pm === "OFFLINE_ADJUSTMENT_REFUND") {
+        return sum;
+      }
       return sum + parseTicketSelectionsQuantity(tx.metadata?.ticketSelections);
     }, 0);
 
@@ -244,6 +269,105 @@ export const getEventMetrics = query({
     return {
       metrics,
       lowestPrice,
+    };
+  },
+});
+
+/**
+ * Saldo disponível ao produtor, alinhado ao financeiro da organização:
+ * líquido online (PIX/cartão, baseAmount quando existir, sem mexer OFFLINE_ADJUSTMENT) +
+ * ajustes offline da tabela transactions − saques vinculados ao evento.
+ */
+export const getEventAvailableBalance = query({
+  args: { eventId: v.id("events") },
+  handler: async (ctx, { eventId }) => {
+    const event = await ctx.db.get(eventId);
+    const empty = {
+      onlineProducerTotal: 0,
+      offlineAdjustmentTotal: 0,
+      grossAvailable: 0,
+      netWithdrawn: 0,
+      availableBalance: 0,
+      hasOrganizationWithdrawals: false,
+    };
+    if (!event) return empty;
+
+    const feeSettings = await ctx.db
+      .query("eventFeeSettings")
+      .withIndex("by_event", (q) => q.eq("eventId", eventId))
+      .first();
+
+    const paidScoped = await ctx.db
+      .query("transactions")
+      .withIndex("by_event", (q) => q.eq("eventId", eventId))
+      .filter((q) =>
+        q.or(
+          q.eq(q.field("status"), "paid"),
+          q.eq(q.field("status"), "charged_back"),
+        ),
+      )
+      .collect();
+
+    let onlineProducerTotal = 0;
+    for (const transaction of paidScoped) {
+      if (transaction.status === "charged_back") continue;
+      const pm = transaction.paymentMethod || "";
+      if (pm === "OFFLINE_ADJUSTMENT" || pm === "OFFLINE_ADJUSTMENT_REFUND") continue;
+
+      const discountAmount = transaction.metadata?.discountAmount || 0;
+      const paymentMethod =
+        transaction.paymentMethod === "credit_card" || transaction.paymentMethod === "CARD"
+          ? "CARD"
+          : "PIX";
+
+      const sellerAmount = calculateProducerAmount(
+        transaction.metadata?.baseAmount || transaction.amount,
+        discountAmount,
+        paymentMethod,
+        feeSettings || undefined,
+        transaction.metadata,
+      );
+      onlineProducerTotal += sellerAmount;
+    }
+
+    const allTx = await ctx.db
+      .query("transactions")
+      .withIndex("by_event", (q) => q.eq("eventId", eventId))
+      .collect();
+
+    let offlineAdjustmentTotal = 0;
+    for (const tx of allTx) {
+      if (
+        tx.paymentMethod === "OFFLINE_ADJUSTMENT" ||
+        tx.paymentMethod === "OFFLINE_ADJUSTMENT_REFUND"
+      ) {
+        offlineAdjustmentTotal += tx.amount;
+      }
+    }
+
+    const grossAvailable = onlineProducerTotal + offlineAdjustmentTotal;
+
+    let netWithdrawn = 0;
+    const organizationId = event.organizationId;
+    if (organizationId) {
+      const withdrawals = await ctx.db
+        .query("organizationWithdrawals")
+        .withIndex("by_organization", (q) => q.eq("organizationId", organizationId))
+        .collect();
+      netWithdrawn = withdrawals
+        .filter((w) => w.eventId === eventId)
+        .reduce((sum, w) => sum + netWithdrawalAmountForBalance(w), 0);
+    }
+
+    const availableBalance = Math.max(0, grossAvailable - netWithdrawn);
+
+    return {
+      onlineProducerTotal,
+      offlineAdjustmentTotal,
+      grossAvailable,
+      netWithdrawn,
+      availableBalance,
+      hasOrganizationWithdrawals: !!organizationId,
     };
   },
 });
@@ -334,12 +458,15 @@ export const purchaseTicketsDirect = mutation({
 export const getEventAvailability = query({
   args: { eventId: v.id("events") },
   handler: async (ctx, { eventId }) => {
-    const ticketTypes = await ctx.db
+    const ticketTypesRaw = await ctx.db
       .query("ticketTypes")
       .withIndex("by_event_active", (q) =>
         q.eq("eventId", eventId).eq("isActive", true)
       )
       .collect();
+
+    /** Venda site/app: ingressos apenas offline ficam de fora. */
+    const ticketTypes = ticketTypesRaw.filter((t) => t.offlineOnlySale !== true);
 
     // Get all tickets for this event
     const tickets = await ctx.db
@@ -447,13 +574,14 @@ export const getEventAvailabilityEventPage = query({
 export const getEventAvailabilityTotalAvailable = query({
   args: { eventId: v.id("events") },
   handler: async (ctx, { eventId }) => {
-    const ticketTypes = await ctx.db
+    const ticketTypesRaw = await ctx.db
       .query("ticketTypes")
       .withIndex("by_event_active", (q) =>
         q.eq("eventId", eventId).eq("isActive", true)
       )
       .collect();
 
+    const ticketTypes = ticketTypesRaw.filter((t) => t.offlineOnlySale !== true);
 
     const totalAvailable = ticketTypes.reduce((sum, type) => sum + type.availableQuantity, 0);
 
@@ -530,15 +658,10 @@ export const getSellerEvents = query({
           .collect();
 
         const revenueFromTransactions = paidTransactions.reduce((total, tx) => {
-          const discountAmount = tx.metadata?.discountAmount || 0;
-          const paymentMethod = (tx.paymentMethod === "credit_card" || tx.paymentMethod === "CARD") ? "CARD" : "PIX";
-          const sellerAmount = calculateProducerAmount(
-            tx.metadata?.baseAmount || tx.amount,
-            discountAmount,
-            paymentMethod,
-            eventFeeSettings || undefined
+          return (
+            total +
+            onlinePaidProducerAmountFromTransaction(tx, eventFeeSettings || undefined)
           );
-          return total + sellerAmount;
         }, 0);
 
         // Na função getSellerEvents, dentro do cálculo de metrics:
@@ -579,6 +702,35 @@ function generateSlug(name: string): string {
     .replace(/--+/g, "-");           // Evita múltiplos hífens consecutivos
 }
 
+/** E-mail e telefone do organizador a partir do cadastro Convex (`users`) — fonte única por userId. */
+async function patchEventOrganizerContactFromConvexUser(
+  ctx: MutationCtx,
+  eventId: Id<"events">,
+  userId: string,
+) {
+  const profile = await ctx.db
+    .query("users")
+    .withIndex("by_user_id", (q) => q.eq("userId", userId))
+    .first();
+
+  const email = profile?.email?.trim();
+  const phone = profile?.phone?.trim();
+
+  const patch: { organizerEmail?: string; organizerPhone?: string } = {};
+  if (email) patch.organizerEmail = email;
+  if (phone) patch.organizerPhone = phone;
+
+  if (Object.keys(patch).length > 0) {
+    await ctx.db.patch(eventId, patch as any);
+  }
+
+  return {
+    organizerEmail: email ?? null,
+    organizerPhone: phone ?? null,
+    organizerName: profile?.name?.trim() ?? null,
+  };
+}
+
 export const create = mutation({
   args: {
     name: v.string(),
@@ -612,9 +764,16 @@ export const create = mutation({
       hasMultipleDays: args.hasMultipleDays ?? false,
       customSections: args.customSections || [],
       organizationId: args.organizationId ?? '',
+      status: 'pending_review',
     });
 
-    return { _id: eventId, slug };
+    const contact = await patchEventOrganizerContactFromConvexUser(
+      ctx,
+      eventId,
+      args.userId,
+    );
+
+    return { _id: eventId, slug, ...contact };
   },
 });
 
@@ -752,6 +911,12 @@ export const purchaseTickets = mutation({
       const ticketType = await ctx.db.get(selection.ticketTypeId);
       if (!ticketType) {
         throw new Error(`Tipo de ingresso não encontrado: ${selection.ticketTypeId}`);
+      }
+
+      if (ticketType.offlineOnlySale === true) {
+        throw new Error(
+          `O ingresso "${ticketType.name}" está disponível apenas na venda offline pelo promoter.`,
+        );
       }
 
       // Check availability
@@ -913,6 +1078,17 @@ export const generateCourtesyTickets = mutation({
     const ticketType = await ctx.db.get(ticketTypeId);
     if (!ticketType) {
       throw new Error("Tipo de ingresso não encontrado");
+    }
+
+    if (ticketType.eventId !== args.eventId) {
+      throw new Error("Este tipo de ingresso não pertence a este evento");
+    }
+
+    const priceZeroCents = Math.round((ticketType.currentPrice ?? 0) * 100) === 0;
+    if (!ticketType.isCourtesy || !priceZeroCents) {
+      throw new Error(
+        "Somente tipos marcados como cortesia e com preço R$ 0,00 podem receber cortesias por este canal."
+      );
     }
 
     if (ticketType.availableQuantity < args.quantity) {
@@ -1105,6 +1281,10 @@ export const getEventFinancialMetrics = query({
     // Receita por tipo (últimos 30 dias) usando ticketSelections no metadata
     const revenueByType = new Map<string, { typeName: string; revenue: number; quantity: number }>();
     for (const tx of paidTransactions) {
+      const pmTx = tx.paymentMethod || "";
+      if (pmTx === "OFFLINE_ADJUSTMENT" || pmTx === "OFFLINE_ADJUSTMENT_REFUND") {
+        continue;
+      }
       const selections = parseTicketSelections((tx as any).metadata?.ticketSelections);
       for (const sel of selections) {
         const ticketTypeId = sel.ticketTypeId ? String(sel.ticketTypeId) : "";
@@ -1143,18 +1323,14 @@ export const getEventFinancialMetrics = query({
       );
 
       const dayRevenue = dayTxs.reduce((sum, tx) => {
-        const discountAmount = tx.metadata?.discountAmount || 0;
-        const paymentMethod = tx.paymentMethod === "CARD" ? "CARD" : "PIX";
-        const sellerAmount = calculateProducerAmount(
-          tx.amount,
-          discountAmount,
-          paymentMethod,
-          eventFeeSettings || undefined,
-        );
-        return sum + sellerAmount;
+        return sum + onlinePaidProducerAmountFromTransaction(tx, eventFeeSettings || undefined);
       }, 0);
 
       const dayQuantity = dayTxs.reduce((sum, tx) => {
+        const pmTx = tx.paymentMethod || "";
+        if (pmTx === "OFFLINE_ADJUSTMENT" || pmTx === "OFFLINE_ADJUSTMENT_REFUND") {
+          return sum;
+        }
         const selections = parseTicketSelections((tx as any).metadata?.ticketSelections);
         return sum + selections.reduce((acc, sel) => acc + (typeof sel?.quantity === "number" ? sel.quantity : 0), 0);
       }, 0);
@@ -1189,11 +1365,9 @@ export const getEventTicketHoldersOptimized = query({
       ))
       .collect();
 
-    // Agrupar tickets por usuário de forma mais eficiente
     const holderMap = new Map();
     const userIds = new Set<string>();
 
-    // Primeiro passo: agrupar tickets e coletar IDs únicos de usuários
     for (const ticket of tickets) {
       userIds.add(ticket.userId);
       const key = ticket.userId;
@@ -1212,27 +1386,10 @@ export const getEventTicketHoldersOptimized = query({
       holder.totalValue += ticket.totalAmount;
     }
 
-    // Segundo passo: buscar dados dos usuários em lote
-    const users = await Promise.all(
-      Array.from(userIds).map(userId =>
-        ctx.db
-          .query("users")
-          .withIndex("by_user_id", (q) => q.eq("userId", userId))
-          .first()
-      )
-    );
+    const userMap = await loadUsersBatch(ctx, [...userIds]);
 
-    // Terceiro passo: mapear dados dos usuários
-    const userMap = new Map();
-    users.forEach(user => {
-      if (user) {
-        userMap.set(user.userId, user);
-      }
-    });
-
-    // Quarto passo: construir resultado final
     const holders = Array.from(holderMap.values())
-      .map(holder => {
+      .map((holder: any) => {
         const user = userMap.get(holder.userId);
         return {
           ...holder,
@@ -1240,14 +1397,14 @@ export const getEventTicketHoldersOptimized = query({
           userEmail: user?.email || "Email não disponível",
         };
       })
-      .sort((a, b) => b.totalTickets - a.totalTickets)
+      .sort((a: any, b: any) => b.totalTickets - a.totalTickets)
       .slice(0, limit);
 
     return {
       holders,
       totalHolders: holderMap.size,
-      totalTickets: Array.from(holderMap.values()).reduce((sum, h) => sum + h.totalTickets, 0),
-      totalValue: Array.from(holderMap.values()).reduce((sum, h) => sum + h.totalValue, 0),
+      totalTickets: Array.from(holderMap.values()).reduce((sum: number, h: any) => sum + h.totalTickets, 0),
+      totalValue: Array.from(holderMap.values()).reduce((sum: number, h: any) => sum + h.totalValue, 0),
     };
   }
 });
@@ -1337,6 +1494,12 @@ export const purchaseTicketsWithFreePay = mutation({
       if (!ticketType) {
         throw new Error(
           `Tipo de ingresso ${selection.ticketTypeId} não encontrado.`
+        );
+      }
+
+      if (ticketType.offlineOnlySale === true) {
+        throw new Error(
+          `O ingresso "${ticketType.name}" está disponível apenas na venda offline pelo promoter.`,
         );
       }
       
@@ -1440,18 +1603,19 @@ export const getOrganizationEvents = query({
           .collect();
 
         const revenueFromTransactions = paidTransactions.reduce((total, tx) => {
-          const discountAmount = tx.metadata?.discountAmount || 0;
-          const paymentMethod = (tx.paymentMethod === "credit_card" || tx.paymentMethod === "CARD") ? "CARD" : "PIX";
-          const sellerAmount = calculateProducerAmount(
-            tx.metadata?.baseAmount || tx.amount,
-            discountAmount,
-            paymentMethod,
-            eventFeeSettings || undefined
+          return (
+            total +
+            onlinePaidProducerAmountFromTransaction(tx, eventFeeSettings || undefined)
           );
-          return total + sellerAmount;
         }, 0);
 
-        const grossFromTransactions = paidTransactions.reduce((total, tx) => total + (tx.metadata?.baseAmount || tx.amount || 0), 0);
+        const grossFromTransactions = paidTransactions.reduce((total, tx) => {
+          const pm = tx.paymentMethod || "";
+          if (pm === "OFFLINE_ADJUSTMENT" || pm === "OFFLINE_ADJUSTMENT_REFUND") {
+            return total;
+          }
+          return total + (tx.amount || 0);
+        }, 0);
 
         const metrics: Metrics = {
           soldTickets: validTickets.reduce((sum, ticket) => sum + ticket.quantity, 0),
@@ -1575,31 +1739,27 @@ export const getEventDemographicStats = query({
       ))
       .collect();
 
-    // Para cada ticket, buscar informações do comprador
+    const uniqueUserIds = [...new Set(tickets.map((t) => t.userId))];
+    const userMap = await loadUsersBatch(ctx, uniqueUserIds);
+
     for (const ticket of tickets) {
-      const user = await ctx.db
-        .query("users")
-        .withIndex("by_user_id", (q) => q.eq("userId", ticket.userId))
-        .first();
+      const user = userMap.get(ticket.userId) ?? null;
 
       if (user) {
-        // Adicionar ao conjunto de compradores únicos
         uniqueBuyerIds.add(user.userId);
 
-        // Verificar se o perfil está completo
         if (user.profileComplete) {
           buyersWithCompleteProfileIds.add(user.userId);
         }
 
-        // Contabilizar por gênero
         if (user.gender) {
-          if (user.gender && user.gender in stats.genderStats) {
-            if (user.gender === 'male' || user.gender === 'female' || 
-                user.gender === 'other' || user.gender === 'prefer_not_to_say') {
-              stats.genderStats[user.gender]++;
-            } else {
-              stats.genderStats.not_informed++;
-            }
+          if (
+            user.gender === "male" ||
+            user.gender === "female" ||
+            user.gender === "other" ||
+            user.gender === "prefer_not_to_say"
+          ) {
+            (stats.genderStats as Record<string, number>)[user.gender]++;
           } else {
             stats.genderStats.not_informed++;
           }
@@ -1607,18 +1767,15 @@ export const getEventDemographicStats = query({
           stats.genderStats.not_informed++;
         }
 
-        // Contabilizar por faixa etária
         if (user.birthDate) {
           const birthDate = new Date(user.birthDate);
           const today = new Date();
           const age = today.getFullYear() - birthDate.getFullYear();
-          
-          // Ajustar se o aniversário ainda não ocorreu este ano
           const monthDiff = today.getMonth() - birthDate.getMonth();
           const dayDiff = today.getDate() - birthDate.getDate();
-          const adjustedAge = monthDiff < 0 || (monthDiff === 0 && dayDiff < 0) ? age - 1 : age;
+          const adjustedAge =
+            monthDiff < 0 || (monthDiff === 0 && dayDiff < 0) ? age - 1 : age;
 
-          // Classificar por faixa etária
           if (adjustedAge < 18) {
             stats.ageStats.under18++;
           } else if (adjustedAge >= 18 && adjustedAge <= 24) {
@@ -1707,6 +1864,7 @@ export const updateEventSettings = mutation({
     userId: v.string(),
     isPublicOnHomepage: v.optional(v.boolean()),
     allowTicketTransfers: v.optional(v.boolean()),
+    allowTicketResale: v.optional(v.boolean()),
     customScripts: v.optional(v.object({
       metaPixel: v.optional(v.string()),
       googleAnalytics: v.optional(v.string()),
@@ -1744,6 +1902,7 @@ export const updateEventSettings = mutation({
     await ctx.db.patch(args.eventId, {
       isPublicOnHomepage: args.isPublicOnHomepage,
       allowTicketTransfers: args.allowTicketTransfers,
+      allowTicketResale: args.allowTicketResale,
       customScripts: args.customScripts,
     });
 
@@ -2003,6 +2162,7 @@ export const getEventConfigData = query({
     return {
       isPublicOnHomepage: event.isPublicOnHomepage,
       allowTicketTransfers: event.allowTicketTransfers,
+      allowTicketResale: event.allowTicketResale,
       customScripts: event.customScripts,
       name: event.name,
     };
@@ -2110,6 +2270,7 @@ export const getEventTicketShow = query({
       longitude: event.longitude,
       placeId: event.placeId,
       is_cancelled: event.is_cancelled,
+      allowTicketResale: event.allowTicketResale,
     };
   },
 });
@@ -2374,5 +2535,108 @@ export const getEventBuyersPaginated = query({
       isDone,
       continueCursor,
     };
+  },
+});
+
+// ── Review status ─────────────────────────────────────────────────────────────
+
+export const getEventReviewStatus = query({
+  args: { eventId: v.id("events") },
+  handler: async (ctx, { eventId }) => {
+    const event = await ctx.db.get(eventId);
+    if (!event) return null;
+    return {
+      status: (event as any).status ?? 'approved',
+      name: event.name,
+      organizerPhone: (event as any).organizerPhone ?? null,
+      organizerEmail: (event as any).organizerEmail ?? null,
+      rejectionReason: (event as any).rejectionReason ?? null,
+    };
+  },
+});
+
+export const approveEvent = mutation({
+  args: { eventId: v.id("events") },
+  handler: async (ctx, { eventId }) => {
+    await ctx.db.patch(eventId, { status: 'approved' } as any);
+    const event = await ctx.db.get(eventId);
+    if (!event) return { success: false };
+    // Retorna dados para o chamador enviar notificações
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_user_id", (q) => q.eq("userId", event.userId))
+      .first();
+    return {
+      success: true,
+      eventName: event.name,
+      userId: event.userId,
+      organizerEmail: (event as any).organizerEmail ?? user?.email ?? null,
+      producerPlayerIds: user?.oneSignalPlayerIds ?? [],
+      slug: event.slug,
+    };
+  },
+});
+
+export const rejectEvent = mutation({
+  args: { eventId: v.id("events"), reason: v.optional(v.string()) },
+  handler: async (ctx, { eventId, reason }) => {
+    await ctx.db.patch(eventId, { status: 'rejected', rejectionReason: reason ?? null } as any);
+    const event = await ctx.db.get(eventId);
+    if (!event) return { success: false };
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_user_id", (q) => q.eq("userId", event.userId))
+      .first();
+    return {
+      success: true,
+      eventName: event.name,
+      userId: event.userId,
+      organizerEmail: (event as any).organizerEmail ?? user?.email ?? null,
+      producerPlayerIds: user?.oneSignalPlayerIds ?? [],
+    };
+  },
+});
+
+export const getPendingReviewEvents = query({
+  args: {},
+  handler: async (ctx) => {
+    const events = await ctx.db
+      .query("events")
+      .withIndex("by_status", (q) => q.eq("status" as any, "pending_review"))
+      .order("desc")
+      .collect();
+    return events.map(e => ({
+      _id: e._id,
+      name: e.name,
+      description: e.description,
+      eventStartDate: e.eventStartDate,
+      location: e.location ?? null,
+      userId: e.userId,
+      organizerPhone: (e as any).organizerPhone ?? null,
+      organizerEmail: (e as any).organizerEmail ?? null,
+      createdAt: e._creationTime,
+    }));
+  },
+});
+
+export const setOrganizerContact = mutation({
+  args: {
+    eventId: v.id("events"),
+    /** Se omitido (cliente legado), usa o `userId` do dono do evento. */
+    userId: v.optional(v.string()),
+    /** Ignorados na prática — contato vem do cadastro Convex; mantidos para compatibilidade. */
+    email: v.optional(v.string()),
+    phone: v.optional(v.string()),
+  },
+  handler: async (ctx, { eventId, userId }) => {
+    const event = await ctx.db.get(eventId);
+    if (!event) throw new Error("Evento não encontrado");
+
+    const ownerId = event.userId;
+    if (userId !== undefined && userId !== "" && userId !== ownerId) {
+      throw new Error("Sem permissão para atualizar este evento");
+    }
+
+    return await patchEventOrganizerContactFromConvexUser(ctx, eventId, ownerId);
   },
 });

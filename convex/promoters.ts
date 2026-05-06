@@ -1,5 +1,11 @@
 import { v } from "convex/values";
+import { Id } from "./_generated/dataModel";
 import { mutation, query } from "./_generated/server";
+
+/** Ingressos de `recordOfflineSale` usam `transactionId` `offline_${code}_...`; não devem entrar como venda pelo link. */
+function isOfflinePromoterSaleTicket(transactionId?: string): boolean {
+  return typeof transactionId === "string" && transactionId.startsWith("offline_");
+}
 
 // Criar promoter (apenas para tracking)
 export const createPromoter = mutation({
@@ -139,8 +145,13 @@ export const getPromoterSalesReport = query({
       .filter((q) => q.or(q.eq(q.field("status"), "valid"), q.eq(q.field("status"), "used")))
       .collect();
 
-    // Agrupar por promoter
-    const salesByPromoter = tickets.reduce((acc, ticket) => {
+    const ticketsOnlineOnly = tickets.filter(
+      (t) =>
+        t.eventId === eventId && !isOfflinePromoterSaleTicket(t.transactionId)
+    );
+
+    // Agrupar por promoter (exclui venda física/registrada; essa entra em offlineSales / relatório offline)
+    const salesByPromoter = ticketsOnlineOnly.reduce((acc, ticket) => {
       const code = ticket.promoterCode || "direct";
       if (!acc[code]) {
         acc[code] = {
@@ -260,8 +271,12 @@ export const getPromoterSales = query({
       .filter((q) => q.or(q.eq(q.field("status"), "valid"), q.eq(q.field("status"), "used")))
       .collect();
 
-    // Group by promoter code
-    const salesByPromoter = tickets.reduce((acc, ticket) => {
+    const ticketsOnlineOnly = tickets.filter(
+      (t) => !isOfflinePromoterSaleTicket(t.transactionId)
+    );
+
+    // Group by promoter code (offline registrada pelo promoter vai só em KPIs offline)
+    const salesByPromoter = ticketsOnlineOnly.reduce((acc, ticket) => {
       const code = ticket.promoterCode || "direct";
       if (!acc[code]) {
         acc[code] = {
@@ -576,7 +591,13 @@ export const getMyPromoterDashboard = query({
           .filter((q) => q.or(q.eq(q.field("status"), "valid"), q.eq(q.field("status"), "used")))
           .collect();
 
-        const salesStats = tickets.reduce((acc, ticket) => {
+        const ticketsOnlineOnly = tickets.filter(
+          (t) =>
+            t.eventId === promoter.eventId &&
+            !isOfflinePromoterSaleTicket(t.transactionId)
+        );
+
+        const salesStats = ticketsOnlineOnly.reduce((acc, ticket) => {
           acc.sales += ticket.quantity;
           acc.revenue += ticket.totalAmount;
           return acc;
@@ -628,7 +649,676 @@ export const isUserPromoter = query({
       .query("promoters")
       .withIndex("by_user", (q) => q.eq("userId", args.userId))
       .first();
-    
+
     return !!promoter;
+  },
+});
+
+// Buscar todos os eventos em que o usuário é promoter (com saldo em aberto)
+export const getUserPromoterLinks = query({
+  args: { userId: v.string() },
+  handler: async (ctx, { userId }) => {
+    const records = await ctx.db
+      .query("promoters")
+      .withIndex("by_user", (q) => q.eq("userId", userId))
+      .collect();
+
+    return await Promise.all(
+      records.map(async (promoter) => {
+        const event = await ctx.db.get(promoter.eventId);
+
+        const sales = await ctx.db
+          .query("offlineSales")
+          .withIndex("by_promoter", (q) => q.eq("promoterId", promoter._id))
+          .filter((q) =>
+            q.or(q.eq(q.field("status"), "recorded"), q.eq(q.field("status"), "settled"))
+          )
+          .collect();
+
+        const settlements = await ctx.db
+          .query("offlineSettlements")
+          .withIndex("by_promoter", (q) => q.eq("promoterId", promoter._id))
+          .collect();
+
+        const totalOwed = sales.reduce((s, x) => s + (x.amountOwedToProducer || 0), 0);
+        const totalSettled = settlements.reduce((s, x) => s + (x.amount || 0), 0);
+        const outstanding = Math.max(0, totalOwed - totalSettled);
+        const totalCommission = sales.reduce((s, x) => s + (x.commissionAmount || 0), 0);
+
+        return {
+          ...promoter,
+          eventName: event?.name || "Evento Removido",
+          eventSlug: event?.slug,
+          eventDate: event?.eventStartDate,
+          imageStorageId: event?.imageStorageId,
+          outstanding,
+          totalCommission,
+          salesCount: sales.length,
+        };
+      })
+    );
+  },
+});
+
+// Buscar promoter de um evento específico pelo userId
+export const getPromoterByUserAndEvent = query({
+  args: { userId: v.string(), eventId: v.id("events") },
+  handler: async (ctx, { userId, eventId }) => {
+    return await ctx.db
+      .query("promoters")
+      .withIndex("by_user", (q) => q.eq("userId", userId))
+      .filter((q) => q.eq(q.field("eventId"), eventId))
+      .first();
+  },
+});
+
+// Tipos de ingresso permitidos para um promoter (ou todos se não houver restrição)
+export const getPromoterAllowedTicketTypes = query({
+  args: { promoterId: v.id("promoters") },
+  handler: async (ctx, { promoterId }) => {
+    const permissions = await ctx.db
+      .query("promoterPermissions")
+      .withIndex("by_promoter", (q) => q.eq("promoterId", promoterId))
+      .filter((q) => q.eq(q.field("allowed"), true))
+      .collect();
+
+    return permissions.map((p) => p.ticketTypeId);
+  },
+});
+
+// Definir permissões de tipos de ingresso para um promoter
+export const setPromoterPermissions = mutation({
+  args: {
+    promoterId: v.id("promoters"),
+    ticketTypeIds: v.array(v.id("ticketTypes")),
+    createdBy: v.string(),
+  },
+  handler: async (ctx, { promoterId, ticketTypeIds, createdBy }) => {
+    // Remove permissions antigas
+    const existing = await ctx.db
+      .query("promoterPermissions")
+      .withIndex("by_promoter", (q) => q.eq("promoterId", promoterId))
+      .collect();
+    for (const p of existing) {
+      await ctx.db.delete(p._id);
+    }
+    // Insere novas
+    for (const ticketTypeId of ticketTypeIds) {
+      await ctx.db.insert("promoterPermissions", {
+        promoterId,
+        ticketTypeId,
+        allowed: true,
+        createdAt: Date.now(),
+        createdBy,
+      });
+    }
+    return { success: true };
+  },
+});
+
+// Registrar venda offline
+export const recordOfflineSale = mutation({
+  args: {
+    eventId: v.id("events"),
+    promoterId: v.id("promoters"),
+    ticketTypeId: v.id("ticketTypes"),
+    quantity: v.number(),
+    recipientEmail: v.string(),
+    userId: v.string(),
+    notes: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const promoter = await ctx.db.get(args.promoterId);
+    if (!promoter || !promoter.isActive) {
+      throw new Error("Promoter não encontrado ou inativo");
+    }
+    if (promoter.eventId !== args.eventId) {
+      throw new Error("Promoter não pertence a este evento");
+    }
+
+    const ticketType = await ctx.db.get(args.ticketTypeId);
+    if (!ticketType) throw new Error("Tipo de ingresso não encontrado");
+    if (ticketType.availableQuantity < args.quantity) {
+      throw new Error(`Ingressos insuficientes. Disponível: ${ticketType.availableQuantity}`);
+    }
+
+    // Fee settings
+    const feeSettings = await ctx.db
+      .query("eventFeeSettings")
+      .withIndex("by_event", (q) => q.eq("eventId", args.eventId))
+      .first();
+
+    const absorbFees = feeSettings?.absorbFees === true;
+    const producerFeeRate = absorbFees
+      ? 0
+      : Math.max(0, Math.min(1, feeSettings?.offlineFee ?? 0.05));
+
+    // Normaliza: se > 1, assume valor em % (ex: 2 = 2% = 0.02), se <= 1, assume decimal
+    const rawRate = promoter.commissionRate ?? 0;
+    const commissionRate = rawRate > 1 ? rawRate / 100 : rawRate;
+    const unitPrice = ticketType.currentPrice;
+    const totalAmount = unitPrice * args.quantity;
+    const commissionAmount = totalAmount * commissionRate;
+    const producerFeeAmount = totalAmount * producerFeeRate;
+    const amountOwedToProducer = totalAmount - commissionAmount;
+
+    // Buscar ou criar usuário pelo email
+    const normalizedEmail = args.recipientEmail.trim().toLowerCase();
+    let recipientUserId: string;
+    const existingUser = await ctx.db
+      .query("users")
+      .withIndex("by_email", (q) => q.eq("email", normalizedEmail))
+      .first();
+
+    if (existingUser) {
+      recipientUserId = existingUser.userId;
+    } else {
+      recipientUserId = `offline_${Date.now()}_${normalizedEmail}`;
+    }
+
+    const now = Date.now();
+    const transactionId = `offline_${promoter.code}_${now}`;
+
+    // Criar transação
+    await ctx.db.insert("transactions", {
+      transactionId,
+      eventId: args.eventId,
+      userId: recipientUserId,
+      customerId: normalizedEmail,
+      amount: -producerFeeAmount,
+      status: "paid",
+      paymentMethod: "OFFLINE_ADJUSTMENT",
+      createdAt: now,
+      metadata: {
+        type: "offline_sale",
+        promoterCode: promoter.code,
+        promoterId: args.promoterId,
+        unitPrice,
+        quantity: args.quantity,
+        totalAmountCharged: totalAmount,
+        recipientEmail: normalizedEmail,
+        notes: args.notes,
+      },
+    });
+
+    // Criar ingressos individuais
+    const ticketIds: string[] = [];
+    for (let i = 0; i < args.quantity; i++) {
+      const ticketId = await ctx.db.insert("tickets", {
+        eventId: args.eventId,
+        ticketTypeId: args.ticketTypeId,
+        userId: recipientUserId,
+        quantity: 1,
+        unitPrice,
+        totalAmount: unitPrice,
+        purchasedAt: now,
+        status: "valid",
+        transactionId,
+        promoterCode: promoter.code,
+      });
+      ticketIds.push(ticketId);
+    }
+
+    // Registrar venda offline
+    const offlineSaleId = await ctx.db.insert("offlineSales", {
+      eventId: args.eventId,
+      promoterId: args.promoterId,
+      ticketTypeId: args.ticketTypeId,
+      quantity: args.quantity,
+      unitPrice,
+      totalAmount,
+      commissionRate,
+      commissionAmount,
+      producerFeeRate,
+      producerFeeAmount,
+      amountOwedToProducer,
+      status: "recorded",
+      recordedBy: args.userId,
+      createdAt: now,
+      notes: args.notes,
+    });
+
+    // Reduzir estoque
+    await ctx.db.patch(args.ticketTypeId, {
+      availableQuantity: ticketType.availableQuantity - args.quantity,
+    });
+
+    // Atualizar stats do promoter
+    await ctx.db.patch(args.promoterId, {
+      totalSales: (promoter.totalSales || 0) + args.quantity,
+      totalRevenue: (promoter.totalRevenue || 0) + totalAmount,
+    });
+
+    return {
+      success: true,
+      offlineSaleId,
+      transactionId,
+      ticketIds,
+      totals: { totalAmount, commissionAmount, producerFeeAmount, amountOwedToProducer },
+    };
+  },
+});
+
+// Cancelar um ingresso offline individualmente
+export const cancelOfflineTicket = mutation({
+  args: {
+    ticketId: v.id("tickets"),
+    userId: v.string(),
+    reason: v.optional(v.string()),
+  },
+  handler: async (ctx, { ticketId, userId, reason }) => {
+    const ticket = await ctx.db.get(ticketId);
+    if (!ticket) throw new Error("Ingresso não encontrado");
+    if (ticket.status !== "valid") throw new Error("Ingresso não está ativo");
+    if (!ticket.promoterCode) throw new Error("Este ingresso não é uma venda offline");
+
+    // Buscar transação para encontrar offlineSale
+    const tx = ticket.transactionId
+      ? await ctx.db
+          .query("transactions")
+          .withIndex("by_transactionId", (q) => q.eq("transactionId", ticket.transactionId!))
+          .first()
+      : null;
+
+    // Buscar offlineSale pelo promoter + evento
+    const promoter = await ctx.db
+      .query("promoters")
+      .withIndex("by_event_code", (q) =>
+        q.eq("eventId", ticket.eventId).eq("code", ticket.promoterCode!)
+      )
+      .first();
+
+    let offlineSale = null;
+    if (promoter) {
+      offlineSale = await ctx.db
+        .query("offlineSales")
+        .withIndex("by_promoter", (q) => q.eq("promoterId", promoter._id))
+        .filter((q) =>
+          q.and(
+            q.eq(q.field("eventId"), ticket.eventId),
+            q.eq(q.field("ticketTypeId"), ticket.ticketTypeId),
+            q.neq(q.field("status"), "cancelled")
+          )
+        )
+        .first();
+    }
+
+    // Cancelar ingresso
+    await ctx.db.patch(ticketId, { status: "cancelled" });
+
+    // Restaurar estoque
+    const ticketType = await ctx.db.get(ticket.ticketTypeId);
+    if (ticketType) {
+      await ctx.db.patch(ticket.ticketTypeId, {
+        availableQuantity: ticketType.availableQuantity + 1,
+      });
+    }
+
+    // Atualizar offlineSale e marcar transação existente como reembolsada
+    if (offlineSale && offlineSale.quantity > 0) {
+      const refundFactor = 1 / offlineSale.quantity;
+      const newQty = Math.max(0, offlineSale.quantity - 1);
+      await ctx.db.patch(offlineSale._id, {
+        quantity: newQty,
+        totalAmount: offlineSale.totalAmount - ticket.unitPrice,
+        commissionAmount: offlineSale.commissionAmount - offlineSale.commissionAmount * refundFactor,
+        producerFeeAmount: offlineSale.producerFeeAmount - offlineSale.producerFeeAmount * refundFactor,
+        amountOwedToProducer: offlineSale.amountOwedToProducer - (ticket.unitPrice * (1 - offlineSale.commissionRate)),
+        status: newQty === 0 ? "cancelled" : offlineSale.status,
+      });
+
+      // Marcar a transação offline existente como reembolsada (não cria nova)
+      if (tx) {
+        await ctx.db.patch(tx._id, {
+          status: "refunded",
+          metadata: {
+            ...(tx.metadata as any),
+            refundedTicketId: ticketId,
+            refundReason: reason,
+            refundedAt: Date.now(),
+          },
+        });
+      }
+    }
+
+    // Atualizar stats do promoter
+    if (promoter) {
+      await ctx.db.patch(promoter._id, {
+        totalSales: Math.max(0, (promoter.totalSales || 0) - 1),
+        totalRevenue: Math.max(0, (promoter.totalRevenue || 0) - ticket.unitPrice),
+      });
+    }
+
+    return { success: true };
+  },
+});
+
+// Cancelar toda uma venda offline (por transactionId)
+export const cancelOfflineTransaction = mutation({
+  args: {
+    transactionId: v.string(),
+    eventId: v.id("events"),
+    userId: v.string(),
+  },
+  handler: async (ctx, { transactionId, eventId, userId }) => {
+    // Buscar todos os ingressos da transação
+    const tickets = await ctx.db
+      .query("tickets")
+      .withIndex("by_transaction", (q) => q.eq("transactionId", transactionId))
+      .filter((q) => q.eq(q.field("eventId"), eventId))
+      .collect();
+
+    if (tickets.length === 0) throw new Error("Nenhum ingresso encontrado para esta transação");
+
+    // Cancelar todos os ingressos e restaurar estoque
+    const stockMap: Record<string, number> = {};
+    for (const ticket of tickets) {
+      if (ticket.status === "valid") {
+        await ctx.db.patch(ticket._id, { status: "cancelled" });
+        const ttId = ticket.ticketTypeId as string;
+        stockMap[ttId] = (stockMap[ttId] || 0) + 1;
+      }
+    }
+
+    // Restaurar estoque por tipo
+    for (const [ticketTypeId, count] of Object.entries(stockMap)) {
+      const tt = await ctx.db.get(ticketTypeId as Id<"ticketTypes">);
+      if (tt) {
+        await ctx.db.patch(ticketTypeId as Id<"ticketTypes">, {
+          availableQuantity: tt.availableQuantity + count,
+        });
+      }
+    }
+
+    // Cancelar a transação
+    const tx = await ctx.db
+      .query("transactions")
+      .withIndex("by_transactionId", (q) => q.eq("transactionId", transactionId))
+      .first();
+    if (tx) {
+      await ctx.db.patch(tx._id, { status: "refunded" });
+    }
+
+    // Buscar e cancelar offlineSale
+    if (tickets[0]?.promoterCode) {
+      const promoter = await ctx.db
+        .query("promoters")
+        .withIndex("by_event_code", (q) =>
+          q.eq("eventId", eventId).eq("code", tickets[0].promoterCode!)
+        )
+        .first();
+
+      if (promoter) {
+        const sale = await ctx.db
+          .query("offlineSales")
+          .withIndex("by_promoter", (q) => q.eq("promoterId", promoter._id))
+          .filter((q) =>
+            q.and(
+              q.eq(q.field("eventId"), eventId),
+              q.neq(q.field("status"), "cancelled")
+            )
+          )
+          .first();
+
+        if (sale) {
+          await ctx.db.patch(sale._id, {
+            quantity: 0,
+            totalAmount: 0,
+            commissionAmount: 0,
+            producerFeeAmount: 0,
+            amountOwedToProducer: 0,
+            status: "cancelled",
+          });
+          // Atualizar stats
+          await ctx.db.patch(promoter._id, {
+            totalSales: Math.max(0, (promoter.totalSales || 0) - sale.quantity),
+            totalRevenue: Math.max(0, (promoter.totalRevenue || 0) - sale.totalAmount),
+          });
+        }
+      }
+    }
+
+    return { success: true, cancelledCount: tickets.length };
+  },
+});
+
+// Dashboard do promoter (KPIs financeiros offline)
+export const getPromoterDashboard = query({
+  args: { eventId: v.id("events"), promoterId: v.id("promoters") },
+  handler: async (ctx, { eventId, promoterId }) => {
+    const sales = await ctx.db
+      .query("offlineSales")
+      .withIndex("by_promoter", (q) => q.eq("promoterId", promoterId))
+      .filter((q) =>
+        q.and(
+          q.eq(q.field("eventId"), eventId),
+          q.or(q.eq(q.field("status"), "recorded"), q.eq(q.field("status"), "settled"))
+        )
+      )
+      .collect();
+
+    const settlements = await ctx.db
+      .query("offlineSettlements")
+      .withIndex("by_promoter", (q) => q.eq("promoterId", promoterId))
+      .filter((q) => q.eq(q.field("eventId"), eventId))
+      .collect();
+
+    const totalSalesAmount = sales.reduce((s, x) => s + (x.totalAmount || 0), 0);
+    const totalCommission = sales.reduce((s, x) => s + (x.commissionAmount || 0), 0);
+    const totalProducerFee = sales.reduce((s, x) => s + (x.producerFeeAmount || 0), 0);
+    const totalOwed = sales.reduce((s, x) => s + (x.amountOwedToProducer || 0), 0);
+    const totalSettled = settlements.reduce((s, x) => s + (x.amount || 0), 0);
+    const outstanding = Math.max(0, totalOwed - totalSettled);
+
+    return {
+      success: true,
+      totals: {
+        totalSalesAmount,
+        totalCommission,
+        totalProducerFee,
+        totalOwed,
+        totalSettled,
+        outstanding,
+      },
+      sales,
+      settlements,
+    };
+  },
+});
+
+// Histórico de transações do promoter (para a tela offline)
+export const getPromoterTransactions = query({
+  args: { eventId: v.id("events"), promoterId: v.id("promoters") },
+  handler: async (ctx, { eventId, promoterId }) => {
+    const promoter = await ctx.db.get(promoterId);
+    if (!promoter) return [];
+
+    // Buscar transações offline deste promoter
+    const transactions = await ctx.db
+      .query("transactions")
+      .withIndex("by_event", (q) => q.eq("eventId", eventId))
+      .filter((q) =>
+        q.or(
+          q.eq(q.field("paymentMethod"), "OFFLINE_ADJUSTMENT"),
+          q.eq(q.field("paymentMethod"), "OFFLINE_ADJUSTMENT_REFUND")
+        )
+      )
+      .collect();
+
+    // Filtrar pelo código do promoter
+    const promoterTransactions = transactions.filter(
+      (t) => (t.metadata as any)?.promoterCode === promoter.code
+        || (t.metadata as any)?.promoterCode === promoter.code
+    );
+
+    // Para cada transação, buscar ingressos
+    const enriched = await Promise.all(
+      promoterTransactions
+        .filter((t) => t.paymentMethod === "OFFLINE_ADJUSTMENT")
+        .map(async (tx) => {
+          const tickets = await ctx.db
+            .query("tickets")
+            .withIndex("by_transaction", (q) => q.eq("transactionId", tx.transactionId))
+            .collect();
+
+          const ticketTypes = await Promise.all(
+            tickets.map(async (t) => {
+              const tt = await ctx.db.get(t.ticketTypeId);
+              return { ...t, ticketTypeName: tt?.name || "Ingresso" };
+            })
+          );
+
+          const meta = tx.metadata as any;
+          return {
+            transactionId: tx.transactionId,
+            createdAt: tx.createdAt,
+            buyerEmail: meta?.recipientEmail || tx.customerId,
+            totalAmount: meta?.totalAmountCharged || 0,
+            quantity: meta?.quantity || tickets.length,
+            status: tx.status,
+            isOffline: true,
+            tickets: ticketTypes,
+            notes: meta?.notes,
+          };
+        })
+    );
+
+    return enriched.sort((a, b) => b.createdAt - a.createdAt);
+  },
+});
+
+// Dashboard do produtor: todos os promoters com totais financeiros
+export const getProducerPromotersDashboard = query({
+  args: { eventId: v.id("events") },
+  handler: async (ctx, { eventId }) => {
+    const promoters = await ctx.db
+      .query("promoters")
+      .withIndex("by_event", (q) => q.eq("eventId", eventId))
+      .collect();
+
+    return await Promise.all(
+      promoters.map(async (promoter) => {
+        const sales = await ctx.db
+          .query("offlineSales")
+          .withIndex("by_promoter", (q) => q.eq("promoterId", promoter._id))
+          .filter((q) =>
+            q.or(q.eq(q.field("status"), "recorded"), q.eq(q.field("status"), "settled"))
+          )
+          .collect();
+
+        const settlements = await ctx.db
+          .query("offlineSettlements")
+          .withIndex("by_promoter", (q) => q.eq("promoterId", promoter._id))
+          .filter((q) => q.eq(q.field("eventId"), eventId))
+          .collect();
+
+        // Online (via link do promoter)
+        const onlineTicketsRaw = await ctx.db
+          .query("tickets")
+          .withIndex("by_promoter", (q) => q.eq("promoterCode", promoter.code))
+          .filter((q) =>
+            q.and(
+              q.eq(q.field("eventId"), eventId),
+              q.or(q.eq(q.field("status"), "valid"), q.eq(q.field("status"), "used"))
+            )
+          )
+          .collect();
+
+        const onlineTickets = onlineTicketsRaw.filter(
+          (t) => !isOfflinePromoterSaleTicket(t.transactionId)
+        );
+
+        const onlineAmount = onlineTickets.reduce((s, t) => s + t.totalAmount, 0);
+        const rawOnlineRate = promoter.commissionRate ?? 0;
+        const normalizedOnlineRate = rawOnlineRate > 1 ? rawOnlineRate / 100 : rawOnlineRate;
+        const onlineCommission = onlineAmount * normalizedOnlineRate;
+
+        const totalSalesAmount = sales.reduce((s, x) => s + (x.totalAmount || 0), 0);
+        const totalCommission = sales.reduce((s, x) => s + (x.commissionAmount || 0), 0) + onlineCommission;
+        const totalProducerFee = sales.reduce((s, x) => s + (x.producerFeeAmount || 0), 0);
+        const totalOwed = sales.reduce((s, x) => s + (x.amountOwedToProducer || 0), 0);
+        const totalSettled = settlements.reduce((s, x) => s + (x.amount || 0), 0);
+        const outstanding = Math.max(0, totalOwed - totalSettled);
+        const totalTicketsCount = sales.reduce((s, x) => s + (x.quantity || 0), 0);
+
+        return {
+          promoterId: promoter._id,
+          name: promoter.name,
+          code: promoter.code,
+          email: promoter.email,
+          commissionRate: promoter.commissionRate ?? 0,
+          totals: {
+            totalSalesAmount,
+            totalCommission,
+            totalProducerFee,
+            totalOwed,
+            totalSettled,
+            outstanding,
+            totalTicketsCount,
+          },
+          online: {
+            totalAmount: onlineAmount,
+            tickets: onlineTickets.length,
+            commission: onlineCommission,
+          },
+        };
+      })
+    );
+  },
+});
+
+// Registrar liquidação (pagamento de promoter ao produtor)
+export const recordPromoterSettlement = mutation({
+  args: {
+    eventId: v.id("events"),
+    promoterId: v.id("promoters"),
+    amount: v.number(),
+    userId: v.string(),
+    notes: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.insert("offlineSettlements", {
+      eventId: args.eventId,
+      promoterId: args.promoterId,
+      amount: args.amount,
+      recordedAt: Date.now(),
+      recordedBy: args.userId,
+      notes: args.notes,
+    });
+    return { success: true };
+  },
+});
+
+// Buscar liquidações de um promoter
+export const getPromoterSettlements = query({
+  args: { eventId: v.id("events"), promoterId: v.id("promoters") },
+  handler: async (ctx, { eventId, promoterId }) => {
+    return await ctx.db
+      .query("offlineSettlements")
+      .withIndex("by_promoter", (q) => q.eq("promoterId", promoterId))
+      .filter((q) => q.eq(q.field("eventId"), eventId))
+      .collect();
+  },
+});
+
+// Atualizar liquidação
+export const updatePromoterSettlement = mutation({
+  args: {
+    settlementId: v.id("offlineSettlements"),
+    amount: v.number(),
+    notes: v.optional(v.string()),
+  },
+  handler: async (ctx, { settlementId, amount, notes }) => {
+    await ctx.db.patch(settlementId, { amount, notes });
+    return { success: true };
+  },
+});
+
+// Deletar liquidação
+export const deletePromoterSettlement = mutation({
+  args: { settlementId: v.id("offlineSettlements") },
+  handler: async (ctx, { settlementId }) => {
+    await ctx.db.delete(settlementId);
+    return { success: true };
   },
 });
